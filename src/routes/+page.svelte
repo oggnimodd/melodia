@@ -4,6 +4,7 @@
   import Button from "$lib/components/ui/button/button.svelte";
   import { Input } from "$lib/components/ui/input";
 
+  // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx = $state<CanvasRenderingContext2D | null>(null);
@@ -19,16 +20,15 @@
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
 
-  // Will be updated after reading the MIDI
   let minMidi = $state(21);
   let maxMidi = $state(108);
 
-  // We’ll measure layout by offsets, so we can scale them to fill the width
   let minOffset = $state(0);
   let maxOffset = $state(0);
   let scale = $state(1);
   let leftOffset = $state(0);
 
+  // Each entry describes how to place white/black keys in one octave
   const octaveLayout = [
     { semitone: 0, isBlack: false, offset: 0 }, // C
     { semitone: 1, isBlack: true, offset: 0.65 }, // C#
@@ -44,6 +44,7 @@
     { semitone: 11, isBlack: false, offset: 6 }, // B
   ];
 
+  // Drawing/animation config
   const CONFIG = {
     pianoKeyHeight: 120,
     blackKeyHeightRatio: 0.6,
@@ -76,29 +77,14 @@
     return names[midi % 12];
   }
 
-  function getOrCreateSampler(): Tone.Sampler {
-    if (!pianoSampler) {
-      pianoSampler = new Tone.Sampler({
-        urls: {
-          C4: "C4.mp3",
-          "D#4": "Ds4.mp3",
-          "F#4": "Fs4.mp3",
-          A4: "A4.mp3",
-        },
-        release: 1,
-        baseUrl: "https://tonejs.github.io/audio/salamander/",
-      }).toDestination();
-    }
-    return pianoSampler;
-  }
-
   function getOctaveLayout(midi: number) {
     return octaveLayout[midi % 12];
   }
 
+  // Returns a numeric offset so we can place the key horizontally
   function getLayoutOffsetRaw(midi: number) {
     const noteOctave = Math.floor(midi / 12);
-    return (noteOctave - 0) * 7 + getOctaveLayout(midi).offset;
+    return noteOctave * 7 + getOctaveLayout(midi).offset;
   }
 
   function getKeyX(midi: number): number {
@@ -115,6 +101,7 @@
     return getOctaveLayout(midi).isBlack;
   }
 
+  // Which keys are "on" at a given time
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
     for (let i = 0; i < allNotes.length; i++) {
@@ -127,22 +114,23 @@
     return active;
   }
 
-  // Stop playback and reset state when a new file is chosen
+  // Called when a new file is chosen
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       if (isPlaying) {
-        stopMidi(); // Stop current playback if any
+        stopMidi();
       }
-      // Reset previous MIDI data
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
     }
   }
 
+  // Whenever midiFile changes, parse the file
   $effect(() => {
     if (!midiFile) return;
+
     (async () => {
       const data = await parseMidiFile(midiFile);
       midiData = data;
@@ -162,6 +150,7 @@
       allNotes = newNotes;
 
       if (allNotes.length > 0) {
+        // Figure out the min/max MIDI
         let trackMin = 9999;
         let trackMax = 0;
         for (const n of allNotes) {
@@ -172,11 +161,6 @@
         maxMidi = trackMax;
         minOffset = getLayoutOffsetRaw(minMidi);
         maxOffset = getLayoutOffsetRaw(maxMidi);
-      } else {
-        minMidi = 21;
-        maxMidi = 108;
-        minOffset = getLayoutOffsetRaw(minMidi);
-        maxOffset = getLayoutOffsetRaw(maxMidi);
       }
 
       initCanvas();
@@ -184,6 +168,7 @@
     })();
   });
 
+  // Sets up the canvas dimensions and piano scale
   function initCanvas() {
     if (!containerDiv || !canvas) return;
     canvas.width = containerDiv.offsetWidth;
@@ -194,18 +179,29 @@
     ctx = context;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    const totalWidthUnits = maxOffset - minOffset + 1;
+    // If we have no notes, skip
+    if (!allNotes.length) return;
+
+    const currentWidthUnits = maxOffset - minOffset + 1;
+    const minKeys = 31;
+    let totalWidthUnits: number;
+    let newLeftOffset: number;
+
+    if (currentWidthUnits < minKeys) {
+      const extra = minKeys - currentWidthUnits;
+      const leftExtra = Math.floor(extra / 2);
+      newLeftOffset = minOffset - leftExtra;
+      totalWidthUnits = minKeys;
+    } else {
+      newLeftOffset = minOffset;
+      totalWidthUnits = currentWidthUnits;
+    }
+
+    leftOffset = newLeftOffset;
     scale = canvas.width / totalWidthUnits;
-    leftOffset = minOffset;
   }
 
-  function drawAll() {
-    if (!ctx || !canvas) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    drawNotes();
-    drawPianoKeys();
-  }
-
+  // Draws the piano keys at the bottom
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -213,12 +209,30 @@
     const startY = canvas.height - pianoHeight;
     const active = getActiveKeys(currentTime);
 
+    // Figure out which MIDI range is visible
+    const totalWidthUnits = canvas.width / scale;
+    let renderedMinMidi = 0;
+    for (let m = 0; m <= 127; m++) {
+      if (getLayoutOffsetRaw(m) >= leftOffset) {
+        renderedMinMidi = m;
+        break;
+      }
+    }
+    let renderedMaxMidi = 127;
+    for (let m = 127; m >= 0; m--) {
+      if (getLayoutOffsetRaw(m) <= leftOffset + totalWidthUnits) {
+        renderedMaxMidi = m;
+        break;
+      }
+    }
+
     // Draw white keys
-    for (let midi = minMidi; midi <= maxMidi; midi++) {
+    for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const isActive = active.has(midi);
+
       c.fillStyle = isActive
         ? CONFIG.activeWhiteKeyColor
         : CONFIG.whiteKeyColor;
@@ -228,24 +242,25 @@
     }
 
     // Draw black keys
-    for (let midi = minMidi; midi <= maxMidi; midi++) {
+    for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const isActive = active.has(midi);
+
       c.fillStyle = isActive
         ? CONFIG.activeBlackKeyColor
         : CONFIG.blackKeyColor;
       c.fillRect(x, startY, w, h);
     }
 
-    // Draw key note labels on white keys
+    // Draw note labels on white keys
     c.fillStyle = CONFIG.fontColor;
     c.font = "bold 16px sans-serif";
     c.textAlign = "center";
     c.textBaseline = "middle";
-    for (let midi = minMidi; midi <= maxMidi; midi++) {
+    for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
@@ -253,6 +268,7 @@
     }
   }
 
+  // Draws falling notes
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -263,6 +279,7 @@
       const note = allNotes[i];
       const appearTime = note.time - CONFIG.visibleSeconds;
       const disappearTime = note.time + note.duration + CONFIG.visibleSeconds;
+
       if (disappearTime < currentTime || appearTime > currentTime) continue;
 
       const timeSinceAppear = currentTime - appearTime;
@@ -271,6 +288,7 @@
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi);
       const w = getKeyWidth(note.midi) - 2;
+
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
 
@@ -279,6 +297,7 @@
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
 
+      // Label the note
       c.fillStyle = "#fff";
       c.font = "10px sans-serif";
       c.textAlign = "center";
@@ -289,6 +308,20 @@
         topY + noteHeight / 2
       );
     }
+  }
+
+  // Clears and redraws everything
+  function drawAll() {
+    if (!ctx || !canvas) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // If there's no MIDI file or no notes, skip
+    if (!midiFile || allNotes.length === 0) {
+      return;
+    }
+
+    drawNotes();
+    drawPianoKeys();
   }
 
   function animate() {
@@ -303,7 +336,19 @@
     isPlaying = true;
     currentTime = 0;
     await Tone.start();
-    const sampler = getOrCreateSampler();
+
+    if (!pianoSampler) {
+      pianoSampler = new Tone.Sampler({
+        urls: {
+          C4: "C4.mp3",
+          "D#4": "Ds4.mp3",
+          "F#4": "Fs4.mp3",
+          A4: "A4.mp3",
+        },
+        release: 1,
+        baseUrl: "https://tonejs.github.io/audio/salamander/",
+      }).toDestination();
+    }
     await Tone.loaded();
 
     const transport = Tone.getTransport();
@@ -313,9 +358,10 @@
     for (let i = 0; i < allNotes.length; i++) {
       const n = allNotes[i];
       transport.schedule((time) => {
-        sampler.triggerAttackRelease(n.name, n.duration, time);
+        pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
       }, n.time);
     }
+
     transport.start();
     animate();
   }
@@ -336,13 +382,21 @@
     drawAll();
   }
 
+  // Re-run initCanvas whenever containerDiv is set
   $effect(() => {
+    if (!containerDiv) return;
     initCanvas();
+    drawAll();
+  });
+
+  // Handle window resizing
+  $effect(() => {
+    if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
       initCanvas();
       drawAll();
     });
-    if (containerDiv) ro.observe(containerDiv);
+    ro.observe(containerDiv);
 
     const handleWindowResize = () => {
       initCanvas();
@@ -350,12 +404,14 @@
     };
     window.addEventListener("resize", handleWindowResize);
 
+    // Cleanup
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", handleWindowResize);
     };
   });
 
+  // Cleanup on unmount (dispose sampler, cancel animation)
   $effect(() => {
     return () => {
       if (pianoSampler) pianoSampler.dispose();
@@ -371,6 +427,7 @@
 <div class="mx-auto max-w-5xl px-4 py-8" bind:this={containerDiv}>
   <h1 class="mb-3 text-2xl font-semibold">Melodia</h1>
 
+  <!-- Use onchange (not on:change) in Svelte 5 -->
   <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
 
   <div class="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black">
@@ -379,6 +436,7 @@
 
   {#if midiFile}
     <div class="mt-4 flex items-center gap-x-3">
+      <!-- Use onclick (not on:click) in Svelte 5 -->
       <Button disabled={isPlaying} onclick={playMidi}>Play MIDI</Button>
       <Button disabled={!isPlaying} onclick={stopMidi}>Stop</Button>
     </div>
