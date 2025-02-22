@@ -127,9 +127,16 @@
     return active;
   }
 
+  // Stop playback and reset state when a new file is chosen
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
+      if (isPlaying) {
+        stopMidi(); // Stop current playback if any
+      }
+      // Reset previous MIDI data
+      midiData = null;
+      allNotes = [];
       midiFile = input.files[0];
     }
   }
@@ -206,6 +213,7 @@
     const startY = canvas.height - pianoHeight;
     const active = getActiveKeys(currentTime);
 
+    // Draw white keys
     for (let midi = minMidi; midi <= maxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
@@ -219,6 +227,7 @@
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
 
+    // Draw black keys
     for (let midi = minMidi; midi <= maxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const x = getKeyX(midi);
@@ -231,8 +240,9 @@
       c.fillRect(x, startY, w, h);
     }
 
+    // Draw key note labels on white keys
     c.fillStyle = CONFIG.fontColor;
-    c.font = "10px sans-serif";
+    c.font = "bold 16px sans-serif";
     c.textAlign = "center";
     c.textBaseline = "middle";
     for (let midi = minMidi; midi <= maxMidi; midi++) {
