@@ -5,6 +5,12 @@
   import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Input } from "$lib/components/ui/input";
 
+  import IconPlayerPlay from "@tabler/icons-svelte/icons/player-play-filled";
+  import IconPlayerStop from "@tabler/icons-svelte/icons/player-stop-filled";
+  import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
+  import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
+  import IconMaximize from "@tabler/icons-svelte/icons/maximize";
+
   // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null); // We'll measure this to subtract its height in fullscreen
@@ -525,13 +531,39 @@
     >
       {#if midiFile}
         <div class="mt-4 flex items-center gap-x-3">
-          <Button disabled={isPlaying} onclick={playMidi}>Play MIDI</Button>
-          <Button disabled={!isPlaying} onclick={stopMidi}>Stop</Button>
-          <Button disabled={!isPlaying} onclick={togglePauseResume}>
-            {isPaused ? "Resume" : "Pause"}
+          <Button
+            class="bg-green-500 hover:bg-green-600"
+            size="icon-sm"
+            disabled={isPlaying}
+            onclick={playMidi}
+          >
+            <IconPlayerPlay />
           </Button>
-          <Button disabled={!midiFile} onclick={toggleFullscreen}>
-            {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          <Button
+            size="icon-sm"
+            variant="destructive"
+            disabled={!isPlaying}
+            onclick={stopMidi}
+          >
+            <IconPlayerStop />
+          </Button>
+          <Button
+            size="icon-sm"
+            disabled={!isPlaying}
+            onclick={togglePauseResume}
+          >
+            {#if isPaused}
+              <IconPlayerResume />
+            {:else}
+              <IconPlayerPause />
+            {/if}
+          </Button>
+          <Button
+            size="icon-sm"
+            disabled={!midiFile}
+            onclick={toggleFullscreen}
+          >
+            <IconMaximize />
           </Button>
         </div>
       {/if}
