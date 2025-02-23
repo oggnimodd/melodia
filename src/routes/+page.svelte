@@ -414,7 +414,7 @@
 
 <div class="mx-auto max-w-5xl px-4 py-8" bind:this={containerDiv}>
   <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-  <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
+  <Input type="file" accept="audio/midi" onchange={handleFileChange} />
   {#if allNotes.length > 0}
     <div class="mt-4 flex items-center justify-center gap-4 text-white">
       {#if midiFile}
@@ -438,7 +438,7 @@
     </div>
   {/if}
   <div class="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black">
-    <canvas bind:this={canvas} class="w-full" on:click={handleCanvasClick}
+    <canvas bind:this={canvas} class="w-full" onclick={handleCanvasClick}
     ></canvas>
   </div>
 </div>
