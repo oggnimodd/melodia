@@ -414,7 +414,11 @@
 
 <div class="mx-auto max-w-5xl px-4 py-8" bind:this={containerDiv}>
   <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-  <Input type="file" accept="audio/midi" onchange={handleFileChange} />
+  <Input
+    type="file"
+    accept=".midi, .mid, audio/midi"
+    onchange={handleFileChange}
+  />
   {#if allNotes.length > 0}
     <div class="mt-4 flex items-center justify-center gap-4 text-white">
       {#if midiFile}
