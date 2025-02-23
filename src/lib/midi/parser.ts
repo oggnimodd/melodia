@@ -1,10 +1,10 @@
 export async function parseMidiFile(file: File) {
   // Dynamically import the module
-  const { Midi } = await import('@tonejs/midi');
-  
+  const { Midi } = await import("@tonejs/midi");
+
   const arrayBuffer = await file.arrayBuffer();
   const midi = new Midi(arrayBuffer);
-  
+
   const midiData = {
     header: {
       keySignatures: midi.header.keySignatures.map((ks) => ({
@@ -56,6 +56,22 @@ export async function parseMidiFile(file: File) {
       })),
     })),
   };
-  
-  return midiData;
+
+  // Calculate total duration
+  const allNotes = midiData.tracks.flatMap((track) => track.notes);
+  let totalDuration = 0;
+  if (allNotes.length) {
+    let maxTime = 0;
+    for (const note of allNotes) {
+      const end = note.time + note.duration;
+      if (end > maxTime) maxTime = end;
+    }
+    totalDuration = maxTime;
+  }
+
+  // Add total duration to the output
+  return {
+    ...midiData,
+    totalDuration,
+  };
 }
