@@ -12,6 +12,8 @@
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
   import { onDestroy } from "svelte";
 
+  import { browser } from "$app/environment";
+
   // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -484,6 +486,7 @@
   });
 
   onDestroy(() => {
+    if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     const transport = Tone.getTransport();
