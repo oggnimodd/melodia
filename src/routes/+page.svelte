@@ -2,6 +2,7 @@
   import * as Tone from "tone";
   import { parseMidiFile } from "$lib/midi/parser";
   import Button from "$lib/components/ui/button/button.svelte";
+  import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Input } from "$lib/components/ui/input";
 
   // -- REACTIVE STATES (Svelte 5 runes) --
@@ -15,6 +16,7 @@
   >([]);
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
+  let isPaused = $state(false);
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
   let minMidi = $state(21);
@@ -73,32 +75,24 @@
     ];
     return names[midi % 12];
   }
-
   function getOctaveLayout(midi: number) {
     return octaveLayout[midi % 12];
   }
-
-  // Returns a numeric offset so we can place the key horizontally
   function getLayoutOffsetRaw(midi: number) {
     const noteOctave = Math.floor(midi / 12);
     return noteOctave * 7 + getOctaveLayout(midi).offset;
   }
-
   function getKeyX(midi: number): number {
     return (getLayoutOffsetRaw(midi) - leftOffset) * scale;
   }
-
   function getKeyWidth(midi: number): number {
     return getOctaveLayout(midi).isBlack
       ? scale * CONFIG.blackKeyWidthRatio
       : scale;
   }
-
   function isBlackKey(midi: number): boolean {
     return getOctaveLayout(midi).isBlack;
   }
-
-  // Which keys are "on" at a given time
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
     for (let i = 0; i < allNotes.length; i++) {
@@ -110,8 +104,6 @@
     }
     return active;
   }
-
-  // Called when a new file is chosen
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -123,14 +115,11 @@
       midiFile = input.files[0];
     }
   }
-
-  // Whenever midiFile changes, parse the file
   $effect(() => {
     if (!midiFile) return;
     (async () => {
       const data = await parseMidiFile(midiFile);
       midiData = data;
-
       const newNotes: typeof allNotes = [];
       data.tracks.forEach((track) => {
         track.notes.forEach((note) => {
@@ -144,9 +133,7 @@
       });
       newNotes.sort((a, b) => a.time - b.time);
       allNotes = newNotes;
-
       if (allNotes.length > 0) {
-        // Figure out the min/max MIDI
         let trackMin = 9999;
         let trackMax = 0;
         for (const n of allNotes) {
@@ -158,34 +145,23 @@
         minOffset = getLayoutOffsetRaw(minMidi);
         maxOffset = getLayoutOffsetRaw(maxMidi);
       }
-
       initCanvas();
       drawAll();
     })();
   });
-
-  // Sets up the canvas dimensions and piano scale
   function initCanvas() {
     if (!containerDiv || !canvas) return;
-
     canvas.width = containerDiv.offsetWidth;
     canvas.height = window.innerHeight * 0.7;
-
     const context = canvas.getContext("2d");
     if (!context) return;
-
     ctx = context;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // If we have no notes, skip
     if (!allNotes.length) return;
-
     const currentWidthUnits = maxOffset - minOffset + 1;
     const minKeys = 31;
-
     let totalWidthUnits: number;
     let newLeftOffset: number;
-
     if (currentWidthUnits < minKeys) {
       const extra = minKeys - currentWidthUnits;
       const leftExtra = Math.floor(extra / 2);
@@ -195,23 +171,16 @@
       newLeftOffset = minOffset;
       totalWidthUnits = currentWidthUnits;
     }
-
     leftOffset = newLeftOffset;
     scale = canvas.width / totalWidthUnits;
   }
-
-  // Draws the piano keys at the bottom
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
     const pianoHeight = CONFIG.pianoKeyHeight;
     const startY = canvas.height - pianoHeight;
-
     const active = getActiveKeys(currentTime);
-
-    // Figure out which MIDI range is visible
     const totalWidthUnits = canvas.width / scale;
-
     let renderedMinMidi = 0;
     for (let m = 0; m <= 127; m++) {
       if (getLayoutOffsetRaw(m) >= leftOffset) {
@@ -219,7 +188,6 @@
         break;
       }
     }
-
     let renderedMaxMidi = 127;
     for (let m = 127; m >= 0; m--) {
       if (getLayoutOffsetRaw(m) <= leftOffset + totalWidthUnits) {
@@ -227,7 +195,6 @@
         break;
       }
     }
-
     // Draw white keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
@@ -241,7 +208,6 @@
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
-
     // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
@@ -254,7 +220,6 @@
         : CONFIG.blackKeyColor;
       c.fillRect(x, startY, w, h);
     }
-
     // Draw note labels on white keys
     c.fillStyle = CONFIG.fontColor;
     c.font = "bold 16px sans-serif";
@@ -267,37 +232,28 @@
       c.fillText(midiToNoteNameNoOctave(midi), x + w / 2, canvas.height - 10);
     }
   }
-
-  // Draws falling notes
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
     const pianoTopY = canvas.height - CONFIG.pianoKeyHeight;
     const speed = pianoTopY / CONFIG.visibleSeconds;
-
     for (let i = 0; i < allNotes.length; i++) {
       const note = allNotes[i];
       const appearTime = note.time - CONFIG.visibleSeconds;
       const disappearTime = note.time + note.duration + CONFIG.visibleSeconds;
-
       if (disappearTime < currentTime || appearTime > currentTime) continue;
-
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
-
       const x = getKeyX(note.midi);
       const w = getKeyWidth(note.midi) - 2;
-
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
       c.fillStyle = isActive
         ? CONFIG.activeNoteColor
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
-
-      // Label the note
       c.fillStyle = "#fff";
       c.font = "10px sans-serif";
       c.textAlign = "center";
@@ -309,40 +265,30 @@
       );
     }
   }
-
-  // Clears and redraws everything
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // If there's no MIDI file or no notes, skip
     if (!midiFile || allNotes.length === 0) {
       return;
     }
     drawNotes();
     drawPianoKeys();
   }
-
   function animate() {
-    // If not playing or no context, don't do anything
     if (!isPlaying || !ctx || !canvas) return;
-
     currentTime = Tone.getTransport().seconds;
-    // If we've reached the end, stop
     if (currentTime >= totalDuration) {
       stopMidi();
       return;
     }
-
     drawAll();
     animationFrameId = requestAnimationFrame(animate);
   }
-
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
+    isPaused = false;
     currentTime = 0;
-
     await Tone.start();
     if (!pianoSampler) {
       pianoSampler = new Tone.Sampler({
@@ -357,24 +303,21 @@
       }).toDestination();
     }
     await Tone.loaded();
-
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-
     for (let i = 0; i < allNotes.length; i++) {
       const n = allNotes[i];
       transport.schedule((time) => {
         pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
       }, n.time);
     }
-
     transport.start();
     animate();
   }
-
   function stopMidi() {
     isPlaying = false;
+    isPaused = false;
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
@@ -388,23 +331,35 @@
     currentTime = 0;
     drawAll();
   }
-
-  // Format seconds into mm:ss
+  function togglePauseResume() {
+    if (!isPlaying) return;
+    if (!isPaused) {
+      // Pause the transport and stop the animation loop.
+      Tone.getTransport().pause();
+      isPaused = true;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    } else {
+      // Resume the transport from the current time.
+      Tone.getTransport().start(undefined, currentTime);
+      isPaused = false;
+      animate();
+    }
+  }
   function formatTime(seconds: number) {
     const floored = Math.floor(seconds);
     const m = Math.floor(floored / 60);
     const s = floored % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }
+  let currentTimeFormatted = $derived(formatTime(currentTime));
+  let totalDurationFormatted = $derived(formatTime(totalDuration));
 
-  // Handle slider input to jump around in the MIDI
-  function handleSliderChange(e: Event | number) {
-    const val =
-      typeof e === "number"
-        ? e
-        : parseFloat((e.target as HTMLInputElement).value);
+  function handleSliderChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
-    // If we manually scrub beyond the end, just stop
     if (val >= totalDuration) {
       stopMidi();
     } else {
@@ -413,37 +368,28 @@
     }
   }
 
-  // Re-run initCanvas whenever containerDiv is set
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
     drawAll();
   });
-
-  // Handle window resizing
   $effect(() => {
     if (!containerDiv) return;
-
     const ro = new ResizeObserver(() => {
       initCanvas();
       drawAll();
     });
     ro.observe(containerDiv);
-
     const handleWindowResize = () => {
       initCanvas();
       drawAll();
     };
     window.addEventListener("resize", handleWindowResize);
-
-    // Cleanup
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", handleWindowResize);
     };
   });
-
-  // Cleanup on unmount (dispose sampler, cancel animation)
   $effect(() => {
     return () => {
       if (pianoSampler) pianoSampler.dispose();
@@ -454,44 +400,34 @@
       isPlaying = false;
     };
   });
-
-  let currentTimeFormatted = $derived(formatTime(currentTime));
-  let totalDurationFormatted = $derived(formatTime(totalDuration));
 </script>
 
-<!-- Outer container -->
 <div class="mx-auto max-w-5xl px-4 py-8" bind:this={containerDiv}>
   <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-  <!-- MIDI file input -->
   <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
-
-  <!-- Time slider + timestamps (CURRENT : TOTAL) -->
   {#if allNotes.length > 0}
     <div class="mt-4 flex items-center justify-center gap-4 text-white">
-      <span>{currentTimeFormatted}</span>
-      <input
-        type="range"
-        min="0"
-        max={totalDuration}
-        step="1"
-        value={currentTime}
-        oninput={handleSliderChange}
-        class="w-full"
-      />
-      <span>{totalDurationFormatted}</span>
+      {#if midiFile}
+        <div class="mt-4 flex items-center gap-x-3">
+          <Button disabled={isPlaying} onclick={playMidi}>Play MIDI</Button>
+          <Button disabled={!isPlaying} onclick={stopMidi}>Stop</Button>
+          <Button disabled={!isPlaying} onclick={togglePauseResume}>
+            {isPaused ? "Resume" : "Pause"}
+          </Button>
+        </div>
+      {/if}
+      <div class="mt-4 flex w-full items-center gap-4 text-white">
+        <span>{currentTimeFormatted}</span>
+        <Slider
+          value={currentTime}
+          max={totalDuration}
+          onInput={handleSliderChange}
+        />
+        <span>{totalDurationFormatted}</span>
+      </div>
     </div>
   {/if}
-
-  <!-- Piano canvas -->
   <div class="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black">
     <canvas bind:this={canvas} class="w-full"></canvas>
   </div>
-
-  <!-- Play/Stop buttons -->
-  {#if midiFile}
-    <div class="mt-4 flex items-center gap-x-3">
-      <Button disabled={isPlaying} onclick={playMidi}>Play MIDI</Button>
-      <Button disabled={!isPlaying} onclick={stopMidi}>Stop</Button>
-    </div>
-  {/if}
 </div>
