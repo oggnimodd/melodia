@@ -13,7 +13,7 @@
 
   // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
-  let controlsDiv = $state<HTMLDivElement | null>(null); // We'll measure this to subtract its height in fullscreen
+  let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx = $state<CanvasRenderingContext2D | null>(null);
   let midiFile = $state<File | null>(null);
@@ -27,7 +27,7 @@
   let isFullscreen = $state(false);
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
-  let minMidi = $state(21);
+  let minMidi = $state(24);
   let maxMidi = $state(108);
   let minOffset = $state(0);
   let maxOffset = $state(0);
@@ -53,7 +53,7 @@
 
   // Drawing/animation config
   const CONFIG = {
-    pianoKeyHeight: 120,
+    pianoHeightRatio: 0.15, // Ratio of canvas height used for piano keys
     blackKeyHeightRatio: 0.6,
     blackKeyWidthRatio: 0.6,
     visibleSeconds: 3,
@@ -172,18 +172,15 @@
   function initCanvas() {
     if (!containerDiv || !canvas) return;
 
-    // The container takes up the whole screen in fullscreen, or is normal otherwise
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
     canvas.width = containerWidth;
 
     if (isFullscreen) {
-      // Subtract the controls bar so the piano keys don't get cut off
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
       canvas.height = availableHeight > 0 ? availableHeight : containerHeight;
     } else {
-      // Original behavior
       canvas.height = window.innerHeight * 0.7;
     }
 
@@ -194,9 +191,8 @@
 
     if (!allNotes.length) return;
 
-    // Figure out how many "width units" (i.e., keys) we have
     const currentWidthUnits = maxOffset - minOffset + 1;
-    const minKeys = 31; // ensures a minimum number of keys are shown
+    const minKeys = 31;
     let totalWidthUnits: number;
     let newLeftOffset: number;
 
@@ -216,7 +212,7 @@
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
-    const pianoHeight = CONFIG.pianoKeyHeight;
+    const pianoHeight = canvas.height * CONFIG.pianoHeightRatio;
     const startY = canvas.height - pianoHeight;
     const active = getActiveKeys(currentTime);
     const totalWidthUnits = canvas.width / scale;
@@ -279,7 +275,7 @@
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
-    const pianoTopY = canvas.height - CONFIG.pianoKeyHeight;
+    const pianoTopY = canvas.height - canvas.height * CONFIG.pianoHeightRatio;
     const speed = pianoTopY / CONFIG.visibleSeconds;
 
     for (let i = 0; i < allNotes.length; i++) {
@@ -390,7 +386,6 @@
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
-      // Pause the transport and stop the animation loop.
       Tone.getTransport().pause();
       isPaused = true;
       if (animationFrameId) {
@@ -398,14 +393,12 @@
         animationFrameId = null;
       }
     } else {
-      // Resume from currentTime
       Tone.getTransport().start(undefined, currentTime);
       isPaused = false;
       animate();
     }
   }
 
-  // Canvas click: either start or pause/resume
   function handleCanvasClick() {
     if (!isPlaying) {
       playMidi();
@@ -414,7 +407,6 @@
     }
   }
 
-  // Fullscreen toggle
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       containerDiv
@@ -437,7 +429,6 @@
     }
   }
 
-  // Keep track of fullscreen changes
   if (typeof window !== "undefined") {
     document.addEventListener("fullscreenchange", () => {
       isFullscreen = !!document.fullscreenElement;
@@ -465,14 +456,12 @@
     }
   }
 
-  // On mount or whenever container changes, init + draw
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
     drawAll();
   });
 
-  // Listen for container resizing (including after fullscreen toggles)
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -493,7 +482,6 @@
     };
   });
 
-  // Cleanup
   $effect(() => {
     return () => {
       if (pianoSampler) pianoSampler.dispose();
@@ -506,24 +494,18 @@
   });
 </script>
 
-<!--
-  We use a flex layout in fullscreen to fill the screen.
-  - If !isFullscreen, we revert to your original classes.
--->
 <div
   class={isFullscreen
     ? "m-0 flex h-screen w-full flex-col p-0"
     : "mx-auto max-w-5xl px-4 py-8"}
   bind:this={containerDiv}
 >
-  <!-- Hide the file input/title if in fullscreen -->
   {#if !isFullscreen}
     <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
 
   {#if allNotes.length > 0}
-    <!-- This controls bar has a certain offsetHeight that we'll subtract in fullscreen -->
     <div
       class="flex items-center justify-center gap-4 text-white"
       class:mt-4={!isFullscreen}
@@ -568,7 +550,6 @@
         </div>
       {/if}
 
-      <!-- Slider + time display -->
       <div class="mt-4 flex w-full items-center gap-4 text-white">
         <span>{currentTimeFormatted}</span>
         <Slider
@@ -581,11 +562,6 @@
     </div>
   {/if}
 
-  <!-- 
-    Piano roll container. 
-    In fullscreen, we let it flex-1 to fill the remaining space. 
-    Otherwise, keep your original styles. 
-  -->
   <div
     class={isFullscreen
       ? "flex-1 overflow-hidden bg-black"
