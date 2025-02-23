@@ -7,6 +7,7 @@
 
   // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
+  let controlsDiv = $state<HTMLDivElement | null>(null); // We'll measure this to subtract its height in fullscreen
   let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx = $state<CanvasRenderingContext2D | null>(null);
   let midiFile = $state<File | null>(null);
@@ -17,6 +18,7 @@
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
   let isPaused = $state(false);
+  let isFullscreen = $state(false);
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
   let minMidi = $state(21);
@@ -75,24 +77,30 @@
     ];
     return names[midi % 12];
   }
+
   function getOctaveLayout(midi: number) {
     return octaveLayout[midi % 12];
   }
+
   function getLayoutOffsetRaw(midi: number) {
     const noteOctave = Math.floor(midi / 12);
     return noteOctave * 7 + getOctaveLayout(midi).offset;
   }
+
   function getKeyX(midi: number): number {
     return (getLayoutOffsetRaw(midi) - leftOffset) * scale;
   }
+
   function getKeyWidth(midi: number): number {
     return getOctaveLayout(midi).isBlack
       ? scale * CONFIG.blackKeyWidthRatio
       : scale;
   }
+
   function isBlackKey(midi: number): boolean {
     return getOctaveLayout(midi).isBlack;
   }
+
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
     for (let i = 0; i < allNotes.length; i++) {
@@ -104,6 +112,7 @@
     }
     return active;
   }
+
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -115,6 +124,8 @@
       midiFile = input.files[0];
     }
   }
+
+  // Parse the MIDI when a file is chosen
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -133,6 +144,7 @@
       });
       newNotes.sort((a, b) => a.time - b.time);
       allNotes = newNotes;
+
       if (allNotes.length > 0) {
         let trackMin = 9999;
         let trackMax = 0;
@@ -149,19 +161,39 @@
       drawAll();
     })();
   });
+
+  // Adjust canvas size
   function initCanvas() {
     if (!containerDiv || !canvas) return;
-    canvas.width = containerDiv.offsetWidth;
-    canvas.height = window.innerHeight * 0.7;
+
+    // The container takes up the whole screen in fullscreen, or is normal otherwise
+    const containerHeight = containerDiv.offsetHeight;
+    const containerWidth = containerDiv.offsetWidth;
+    canvas.width = containerWidth;
+
+    if (isFullscreen) {
+      // Subtract the controls bar so the piano keys don't get cut off
+      const controlsHeight = controlsDiv?.offsetHeight || 0;
+      const availableHeight = containerHeight - controlsHeight;
+      canvas.height = availableHeight > 0 ? availableHeight : containerHeight;
+    } else {
+      // Original behavior
+      canvas.height = window.innerHeight * 0.7;
+    }
+
     const context = canvas.getContext("2d");
     if (!context) return;
     ctx = context;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+
     if (!allNotes.length) return;
+
+    // Figure out how many "width units" (i.e., keys) we have
     const currentWidthUnits = maxOffset - minOffset + 1;
-    const minKeys = 31;
+    const minKeys = 31; // ensures a minimum number of keys are shown
     let totalWidthUnits: number;
     let newLeftOffset: number;
+
     if (currentWidthUnits < minKeys) {
       const extra = minKeys - currentWidthUnits;
       const leftExtra = Math.floor(extra / 2);
@@ -174,6 +206,7 @@
     leftOffset = newLeftOffset;
     scale = canvas.width / totalWidthUnits;
   }
+
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -181,6 +214,7 @@
     const startY = canvas.height - pianoHeight;
     const active = getActiveKeys(currentTime);
     const totalWidthUnits = canvas.width / scale;
+
     let renderedMinMidi = 0;
     for (let m = 0; m <= 127; m++) {
       if (getLayoutOffsetRaw(m) >= leftOffset) {
@@ -195,6 +229,7 @@
         break;
       }
     }
+
     // Draw white keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
@@ -208,6 +243,7 @@
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
+
     // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
@@ -220,6 +256,7 @@
         : CONFIG.blackKeyColor;
       c.fillRect(x, startY, w, h);
     }
+
     // Draw note labels on white keys
     c.fillStyle = CONFIG.fontColor;
     c.font = "bold 16px sans-serif";
@@ -232,16 +269,19 @@
       c.fillText(midiToNoteNameNoOctave(midi), x + w / 2, canvas.height - 10);
     }
   }
+
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
     const pianoTopY = canvas.height - CONFIG.pianoKeyHeight;
     const speed = pianoTopY / CONFIG.visibleSeconds;
+
     for (let i = 0; i < allNotes.length; i++) {
       const note = allNotes[i];
       const appearTime = note.time - CONFIG.visibleSeconds;
       const disappearTime = note.time + note.duration + CONFIG.visibleSeconds;
       if (disappearTime < currentTime || appearTime > currentTime) continue;
+
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
@@ -250,10 +290,12 @@
       const w = getKeyWidth(note.midi) - 2;
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
+
       c.fillStyle = isActive
         ? CONFIG.activeNoteColor
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
+
       c.fillStyle = "#fff";
       c.font = "10px sans-serif";
       c.textAlign = "center";
@@ -265,6 +307,7 @@
       );
     }
   }
+
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -274,6 +317,7 @@
     drawNotes();
     drawPianoKeys();
   }
+
   function animate() {
     if (!isPlaying || !ctx || !canvas) return;
     currentTime = Tone.getTransport().seconds;
@@ -284,6 +328,7 @@
     drawAll();
     animationFrameId = requestAnimationFrame(animate);
   }
+
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
@@ -303,18 +348,22 @@
       }).toDestination();
     }
     await Tone.loaded();
+
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
+
     for (let i = 0; i < allNotes.length; i++) {
       const n = allNotes[i];
       transport.schedule((time) => {
         pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
       }, n.time);
     }
+
     transport.start();
     animate();
   }
+
   function stopMidi() {
     isPlaying = false;
     isPaused = false;
@@ -331,6 +380,7 @@
     currentTime = 0;
     drawAll();
   }
+
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
@@ -342,14 +392,14 @@
         animationFrameId = null;
       }
     } else {
-      // Resume the transport from the current time.
+      // Resume from currentTime
       Tone.getTransport().start(undefined, currentTime);
       isPaused = false;
       animate();
     }
   }
 
-  // New: Handle canvas click events.
+  // Canvas click: either start or pause/resume
   function handleCanvasClick() {
     if (!isPlaying) {
       playMidi();
@@ -358,12 +408,43 @@
     }
   }
 
+  // Fullscreen toggle
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      containerDiv
+        ?.requestFullscreen()
+        .then(() => {
+          isFullscreen = true;
+        })
+        .catch((err) => {
+          console.error("Error attempting to enable full-screen mode:", err);
+        });
+    } else {
+      document
+        .exitFullscreen()
+        .then(() => {
+          isFullscreen = false;
+        })
+        .catch((err) => {
+          console.error("Error attempting to exit full-screen mode:", err);
+        });
+    }
+  }
+
+  // Keep track of fullscreen changes
+  if (typeof window !== "undefined") {
+    document.addEventListener("fullscreenchange", () => {
+      isFullscreen = !!document.fullscreenElement;
+    });
+  }
+
   function formatTime(seconds: number) {
     const floored = Math.floor(seconds);
     const m = Math.floor(floored / 60);
     const s = floored % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }
+
   let currentTimeFormatted = $derived(formatTime(currentTime));
   let totalDurationFormatted = $derived(formatTime(totalDuration));
 
@@ -378,11 +459,14 @@
     }
   }
 
+  // On mount or whenever container changes, init + draw
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
     drawAll();
   });
+
+  // Listen for container resizing (including after fullscreen toggles)
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -390,16 +474,20 @@
       drawAll();
     });
     ro.observe(containerDiv);
+
     const handleWindowResize = () => {
       initCanvas();
       drawAll();
     };
     window.addEventListener("resize", handleWindowResize);
+
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
+  // Cleanup
   $effect(() => {
     return () => {
       if (pianoSampler) pianoSampler.dispose();
@@ -412,15 +500,29 @@
   });
 </script>
 
-<div class="mx-auto max-w-5xl px-4 py-8" bind:this={containerDiv}>
-  <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-  <Input
-    type="file"
-    accept=".midi, .mid, audio/midi"
-    onchange={handleFileChange}
-  />
+<!--
+  We use a flex layout in fullscreen to fill the screen.
+  - If !isFullscreen, we revert to your original classes.
+-->
+<div
+  class={isFullscreen
+    ? "m-0 flex h-screen w-full flex-col p-0"
+    : "mx-auto max-w-5xl px-4 py-8"}
+  bind:this={containerDiv}
+>
+  <!-- Hide the file input/title if in fullscreen -->
+  {#if !isFullscreen}
+    <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
+    <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
+  {/if}
+
   {#if allNotes.length > 0}
-    <div class="mt-4 flex items-center justify-center gap-4 text-white">
+    <!-- This controls bar has a certain offsetHeight that we'll subtract in fullscreen -->
+    <div
+      class="flex items-center justify-center gap-4 text-white"
+      class:mt-4={!isFullscreen}
+      bind:this={controlsDiv}
+    >
       {#if midiFile}
         <div class="mt-4 flex items-center gap-x-3">
           <Button disabled={isPlaying} onclick={playMidi}>Play MIDI</Button>
@@ -428,8 +530,13 @@
           <Button disabled={!isPlaying} onclick={togglePauseResume}>
             {isPaused ? "Resume" : "Pause"}
           </Button>
+          <Button disabled={!midiFile} onclick={toggleFullscreen}>
+            {isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+          </Button>
         </div>
       {/if}
+
+      <!-- Slider + time display -->
       <div class="mt-4 flex w-full items-center gap-4 text-white">
         <span>{currentTimeFormatted}</span>
         <Slider
@@ -441,7 +548,17 @@
       </div>
     </div>
   {/if}
-  <div class="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black">
+
+  <!-- 
+    Piano roll container. 
+    In fullscreen, we let it flex-1 to fill the remaining space. 
+    Otherwise, keep your original styles. 
+  -->
+  <div
+    class={isFullscreen
+      ? "flex-1 overflow-hidden bg-black"
+      : "mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black"}
+  >
     <canvas bind:this={canvas} class="w-full" onclick={handleCanvasClick}
     ></canvas>
   </div>
