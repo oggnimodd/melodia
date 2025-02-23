@@ -348,6 +348,16 @@
       animate();
     }
   }
+
+  // New: Handle canvas click events.
+  function handleCanvasClick() {
+    if (!isPlaying) {
+      playMidi();
+    } else {
+      togglePauseResume();
+    }
+  }
+
   function formatTime(seconds: number) {
     const floored = Math.floor(seconds);
     const m = Math.floor(floored / 60);
@@ -428,6 +438,7 @@
     </div>
   {/if}
   <div class="mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black">
-    <canvas bind:this={canvas} class="w-full"></canvas>
+    <canvas bind:this={canvas} class="w-full" on:click={handleCanvasClick}
+    ></canvas>
   </div>
 </div>
