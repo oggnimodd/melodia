@@ -10,6 +10,7 @@
   import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
   import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
+  import { onDestroy } from "svelte";
 
   // -- REACTIVE STATES (Svelte 5 runes) --
   let containerDiv = $state<HTMLDivElement | null>(null);
@@ -482,15 +483,13 @@
     };
   });
 
-  $effect(() => {
-    return () => {
-      if (pianoSampler) pianoSampler.dispose();
-      if (animationFrameId) cancelAnimationFrame(animationFrameId);
-      const transport = Tone.getTransport();
-      transport.stop();
-      transport.cancel(0);
-      isPlaying = false;
-    };
+  onDestroy(() => {
+    if (pianoSampler) pianoSampler.dispose();
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.cancel(0);
+    isPlaying = false;
   });
 </script>
 
