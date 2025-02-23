@@ -4,17 +4,16 @@
   import Button from "$lib/components/ui/button/button.svelte";
   import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Input } from "$lib/components/ui/input";
-
   import IconPlayerPlay from "@tabler/icons-svelte/icons/player-play-filled";
   import IconPlayerStop from "@tabler/icons-svelte/icons/player-stop-filled";
   import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
   import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
   import { onDestroy } from "svelte";
-
   import { browser } from "$app/environment";
+  import { untrack } from "svelte";
 
-  // -- REACTIVE STATES (Svelte 5 runes) --
+  // -- REACTIVE STATES --
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -36,9 +35,13 @@
   let maxOffset = $state(0);
   let scale = $state(1);
   let leftOffset = $state(0);
+  let lastFrameTime = $state(0);
+  let animationStartTime = $state(0);
+  let lastTransportTime = $state(0);
+
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
-  // Each entry describes how to place white/black keys in one octave
+  // -- CONSTANTS --
   const octaveLayout = [
     { semitone: 0, isBlack: false, offset: 0 }, // C
     { semitone: 1, isBlack: true, offset: 0.65 }, // C#
@@ -54,9 +57,8 @@
     { semitone: 11, isBlack: false, offset: 6 }, // B
   ];
 
-  // Drawing/animation config
   const CONFIG = {
-    pianoHeightRatio: 0.15, // Ratio of canvas height used for piano keys
+    pianoHeightRatio: 0.15,
     blackKeyHeightRatio: 0.6,
     blackKeyWidthRatio: 0.6,
     visibleSeconds: 3,
@@ -69,6 +71,7 @@
     fontColor: "#000000",
   };
 
+  // -- UTILITY FUNCTIONS --
   function midiToNoteNameNoOctave(midi: number): string {
     const names = [
       "C",
@@ -112,8 +115,7 @@
 
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
-    for (let i = 0; i < allNotes.length; i++) {
-      const note = allNotes[i];
+    for (const note of allNotes) {
       if (note.time > time) break;
       if (time >= note.time && time <= note.time + note.duration) {
         active.add(note.midi);
@@ -122,6 +124,7 @@
     return active;
   }
 
+  // -- FILE HANDLING --
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -134,12 +137,13 @@
     }
   }
 
-  // Parse the MIDI when a file is chosen
+  // -- MIDI PARSING --
   $effect(() => {
     if (!midiFile) return;
     (async () => {
       const data = await parseMidiFile(midiFile);
       midiData = data;
+
       const newNotes: typeof allNotes = [];
       data.tracks.forEach((track) => {
         track.notes.forEach((note) => {
@@ -151,27 +155,25 @@
           });
         });
       });
+
       newNotes.sort((a, b) => a.time - b.time);
       allNotes = newNotes;
 
       if (allNotes.length > 0) {
-        let trackMin = 9999;
-        let trackMax = 0;
-        for (const n of allNotes) {
-          if (n.midi < trackMin) trackMin = n.midi;
-          if (n.midi > trackMax) trackMax = n.midi;
-        }
+        let trackMin = Math.min(...allNotes.map((n) => n.midi));
+        let trackMax = Math.max(...allNotes.map((n) => n.midi));
         minMidi = trackMin;
         maxMidi = trackMax;
         minOffset = getLayoutOffsetRaw(minMidi);
         maxOffset = getLayoutOffsetRaw(maxMidi);
       }
+
       initCanvas();
       drawAll();
     })();
   });
 
-  // Adjust canvas size
+  // -- CANVAS HANDLING --
   function initCanvas() {
     if (!containerDiv || !canvas) return;
 
@@ -208,6 +210,7 @@
       newLeftOffset = minOffset;
       totalWidthUnits = currentWidthUnits;
     }
+
     leftOffset = newLeftOffset;
     scale = canvas.width / totalWidthUnits;
   }
@@ -218,22 +221,14 @@
     const pianoHeight = canvas.height * CONFIG.pianoHeightRatio;
     const startY = canvas.height - pianoHeight;
     const active = getActiveKeys(currentTime);
-    const totalWidthUnits = canvas.width / scale;
 
-    let renderedMinMidi = 0;
-    for (let m = 0; m <= 127; m++) {
-      if (getLayoutOffsetRaw(m) >= leftOffset) {
-        renderedMinMidi = m;
-        break;
-      }
-    }
-    let renderedMaxMidi = 127;
-    for (let m = 127; m >= 0; m--) {
-      if (getLayoutOffsetRaw(m) <= leftOffset + totalWidthUnits) {
-        renderedMaxMidi = m;
-        break;
-      }
-    }
+    // Calculate visible range of keys
+    const totalWidthUnits = canvas.width / scale;
+    const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
+    const renderedMaxMidi = Math.min(
+      127,
+      Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
+    );
 
     // Draw white keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
@@ -262,7 +257,7 @@
       c.fillRect(x, startY, w, h);
     }
 
-    // Draw note labels on white keys
+    // Draw labels
     c.fillStyle = CONFIG.fontColor;
     c.font = "bold 16px sans-serif";
     c.textAlign = "center";
@@ -281,65 +276,111 @@
     const pianoTopY = canvas.height - canvas.height * CONFIG.pianoHeightRatio;
     const speed = pianoTopY / CONFIG.visibleSeconds;
 
-    for (let i = 0; i < allNotes.length; i++) {
-      const note = allNotes[i];
-      const appearTime = note.time - CONFIG.visibleSeconds;
-      const disappearTime = note.time + note.duration + CONFIG.visibleSeconds;
-      if (disappearTime < currentTime || appearTime > currentTime) continue;
+    // Calculate visible range
+    const visibleStart = currentTime - CONFIG.visibleSeconds;
+    const visibleEnd = currentTime + CONFIG.visibleSeconds;
 
+    // Find visible notes
+    const startIdx = allNotes.findIndex(
+      (n) => n.time + n.duration >= visibleStart
+    );
+    if (startIdx === -1) return;
+
+    for (let i = startIdx; i < allNotes.length; i++) {
+      const note = allNotes[i];
+      if (note.time > visibleEnd) break;
+
+      const appearTime = note.time - CONFIG.visibleSeconds;
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi);
       const w = getKeyWidth(note.midi) - 2;
+
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
-
       c.fillStyle = isActive
         ? CONFIG.activeNoteColor
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
 
-      c.fillStyle = "#fff";
-      c.font = "10px sans-serif";
-      c.textAlign = "center";
-      c.textBaseline = "middle";
-      c.fillText(
-        midiToNoteNameNoOctave(note.midi),
-        x + w / 2,
-        topY + noteHeight / 2
-      );
+      if (noteHeight > 15) {
+        c.fillStyle = "#fff";
+        c.font = "10px sans-serif";
+        c.textAlign = "center";
+        c.textBaseline = "middle";
+        c.fillText(
+          midiToNoteNameNoOctave(note.midi),
+          x + w / 2,
+          topY + noteHeight / 2
+        );
+      }
     }
   }
 
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (!midiFile || allNotes.length === 0) {
-      return;
-    }
-    drawNotes();
-    drawPianoKeys();
+    if (!midiFile || allNotes.length === 0) return;
+
+    untrack(() => {
+      drawNotes();
+      drawPianoKeys();
+    });
   }
 
-  function animate() {
+  // -- ANIMATION --
+  function animate(timestamp: number) {
     if (!isPlaying || !ctx || !canvas) return;
-    currentTime = Tone.getTransport().seconds;
+
+    // Initialize animation start time
+    if (animationStartTime === 0) {
+      animationStartTime = timestamp - currentTime * 1000;
+    }
+
+    // Update time based on animation frame
+    const newCurrentTime = (timestamp - animationStartTime) / 1000;
+
+    // Sync with transport occasionally
+    if (timestamp - lastTransportTime > 100) {
+      const transportTime = untrack(() => Tone.getTransport().seconds);
+      if (Math.abs(transportTime - newCurrentTime) > 0.1) {
+        animationStartTime = timestamp - transportTime * 1000;
+      }
+      lastTransportTime = timestamp;
+    }
+
+    currentTime = newCurrentTime;
+
     if (currentTime >= totalDuration) {
       stopMidi();
       return;
     }
-    drawAll();
+
+    // Frame limiting
+    const timeSinceLastFrame = timestamp - lastFrameTime;
+    if (timeSinceLastFrame >= 1000 / 60) {
+      drawAll();
+      lastFrameTime = timestamp;
+    }
+
     animationFrameId = requestAnimationFrame(animate);
   }
 
+  // -- PLAYBACK CONTROLS --
   async function playMidi() {
     if (!allNotes.length) return;
+
     isPlaying = true;
     isPaused = false;
     currentTime = 0;
+    animationStartTime = 0;
+    lastFrameTime = 0;
+    lastTransportTime = 0;
+
     await Tone.start();
+
     if (!pianoSampler) {
       pianoSampler = new Tone.Sampler({
         urls: {
@@ -352,21 +393,22 @@
         baseUrl: "https://tonejs.github.io/audio/salamander/",
       }).toDestination();
     }
+
     await Tone.loaded();
 
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
 
-    for (let i = 0; i < allNotes.length; i++) {
-      const n = allNotes[i];
-      transport.schedule((time) => {
-        pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
-      }, n.time);
-    }
-
+    untrack(() => {
+      for (const n of allNotes) {
+        transport.schedule((time) => {
+          pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
+        }, n.time);
+      }
+    });
     transport.start();
-    animate();
+    requestAnimationFrame(animate);
   }
 
   function stopMidi() {
@@ -388,6 +430,7 @@
 
   function togglePauseResume() {
     if (!isPlaying) return;
+
     if (!isPaused) {
       Tone.getTransport().pause();
       isPaused = true;
@@ -398,10 +441,12 @@
     } else {
       Tone.getTransport().start(undefined, currentTime);
       isPaused = false;
-      animate();
+      animationStartTime = performance.now() - currentTime * 1000;
+      requestAnimationFrame(animate);
     }
   }
 
+  // -- UI HANDLERS --
   function handleCanvasClick() {
     if (!isPlaying) {
       playMidi();
@@ -432,12 +477,6 @@
     }
   }
 
-  if (typeof window !== "undefined") {
-    document.addEventListener("fullscreenchange", () => {
-      isFullscreen = !!document.fullscreenElement;
-    });
-  }
-
   function formatTime(seconds: number) {
     const floored = Math.floor(seconds);
     const m = Math.floor(floored / 60);
@@ -445,20 +484,23 @@
     return `${m}:${String(s).padStart(2, "0")}`;
   }
 
-  let currentTimeFormatted = $derived(formatTime(currentTime));
-  let totalDurationFormatted = $derived(formatTime(totalDuration));
-
   function handleSliderChange(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
     if (val >= totalDuration) {
       stopMidi();
     } else {
+      animationStartTime = performance.now() - val * 1000;
       Tone.getTransport().seconds = val;
       drawAll();
     }
   }
 
+  // -- DERIVED VALUES --
+  let currentTimeFormatted = $derived(formatTime(currentTime));
+  let totalDurationFormatted = $derived(formatTime(totalDuration));
+
+  // -- LIFECYCLE & EFFECTS --
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
@@ -484,6 +526,12 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
+  if (typeof window !== "undefined") {
+    document.addEventListener("fullscreenchange", () => {
+      isFullscreen = !!document.fullscreenElement;
+    });
+  }
 
   onDestroy(() => {
     if (!browser) return;
