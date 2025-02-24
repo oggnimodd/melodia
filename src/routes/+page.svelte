@@ -37,10 +37,8 @@
   let lastFrameTime = $state(0);
   let animationStartTime = $state(0);
   let lastTransportTime = $state(0);
-
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
-
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
   const octaveLayout = [
@@ -117,7 +115,6 @@
     }
     return active;
   }
-
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -129,13 +126,11 @@
       midiFile = input.files[0];
     }
   }
-
   $effect(() => {
     if (!midiFile) return;
     (async () => {
       const data = await parseMidiFile(midiFile);
       midiData = data;
-
       const newNotes: typeof allNotes = [];
       data.tracks.forEach((track) => {
         track.notes.forEach((note) => {
@@ -147,10 +142,8 @@
           });
         });
       });
-
       newNotes.sort((a, b) => a.time - b.time);
       allNotes = newNotes;
-
       if (allNotes.length > 0) {
         let trackMin = Math.min(...allNotes.map((n) => n.midi));
         let trackMax = Math.max(...allNotes.map((n) => n.midi));
@@ -159,21 +152,16 @@
         minOffset = getLayoutOffsetRaw(minMidi);
         maxOffset = getLayoutOffsetRaw(maxMidi);
       }
-
       initCanvas();
       drawAll();
     })();
   });
-
   function initCanvas() {
     if (!containerDiv || !canvas) return;
-
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
-
     let finalWidth = containerWidth;
     let finalHeight = 0;
-
     if (isFullscreen) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
@@ -181,32 +169,24 @@
     } else {
       finalHeight = window.innerHeight * 0.7;
     }
-
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
-
     canvas.width = finalWidth * dpr;
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
-
     const context = canvas.getContext("2d");
     if (!context) return;
-
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
-
     ctx.clearRect(0, 0, finalWidth, finalHeight);
-
     if (!allNotes.length) return;
-
     const currentWidthUnits = maxOffset - minOffset + 1;
     const minKeys = 31;
     let totalWidthUnits: number;
     let newLeftOffset: number;
-
     if (currentWidthUnits < minKeys) {
       const extra = minKeys - currentWidthUnits;
       const leftExtra = Math.floor(extra / 2);
@@ -216,54 +196,44 @@
       newLeftOffset = minOffset;
       totalWidthUnits = currentWidthUnits;
     }
-
     leftOffset = newLeftOffset;
     scale = finalWidth / totalWidthUnits;
   }
-
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
-
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
     const active = getActiveKeys(currentTime);
-
     const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
-
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const isActive = active.has(midi);
-
       c.fillStyle = isActive
         ? CONFIG.activeWhiteKeyColor
         : CONFIG.whiteKeyColor;
       c.fillRect(x, startY, w - 1, pianoHeight);
-
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
-
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const isActive = active.has(midi);
-
       c.fillStyle = isActive
         ? CONFIG.activeBlackKeyColor
         : CONFIG.blackKeyColor;
       c.fillRect(x, startY, w, h);
     }
-
     c.fillStyle = CONFIG.fontColor;
     const keyFontSize = pianoHeight * 0.15;
     c.font = "500 " + keyFontSize + "px sans-serif";
@@ -274,29 +244,28 @@
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
-      c.fillText(midiToNoteNameNoOctave(midi), x + w / 2, canvasCssHeight - keyYOffset);
+      c.fillText(
+        midiToNoteNameNoOctave(midi),
+        x + w / 2,
+        canvasCssHeight - keyYOffset
+      );
     }
   }
-
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
-
     const pianoTopY =
       canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio;
     const speed = pianoTopY / CONFIG.visibleSeconds;
-
     const visibleStart = currentTime - CONFIG.visibleSeconds;
     const visibleEnd = currentTime + CONFIG.visibleSeconds;
     const startIdx = allNotes.findIndex(
       (n) => n.time + n.duration >= visibleStart
     );
     if (startIdx === -1) return;
-
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
       if (note.time > visibleEnd) break;
-
       const appearTime = note.time - CONFIG.visibleSeconds;
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
@@ -304,14 +273,12 @@
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi);
       const w = getKeyWidth(note.midi) - 2;
-
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
       c.fillStyle = isActive
         ? CONFIG.activeNoteColor
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
-
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
         c.font = "bold 12px sans-serif";
@@ -325,29 +292,21 @@
       }
     }
   }
-
   function drawAll() {
     if (!ctx || !canvas) return;
-
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
-
     if (!midiFile || allNotes.length === 0) return;
-
     untrack(() => {
       drawNotes();
       drawPianoKeys();
     });
   }
-
   function animate(timestamp: number) {
     if (!isPlaying || !ctx || !canvas) return;
-
     if (animationStartTime === 0) {
       animationStartTime = timestamp - currentTime * 1000;
     }
-
     const newCurrentTime = (timestamp - animationStartTime) / 1000;
-
     if (timestamp - lastTransportTime > 100) {
       const transportTime = untrack(() => Tone.getTransport().seconds);
       if (Math.abs(transportTime - newCurrentTime) > 0.1) {
@@ -355,19 +314,15 @@
       }
       lastTransportTime = timestamp;
     }
-
     currentTime = newCurrentTime;
     if (currentTime >= totalDuration) {
       stopMidi();
       return;
     }
-
     drawAll();
     lastFrameTime = timestamp;
-
     animationFrameId = requestAnimationFrame(animate);
   }
-
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
@@ -376,7 +331,6 @@
     animationStartTime = 0;
     lastFrameTime = 0;
     lastTransportTime = 0;
-
     await Tone.start();
     if (!pianoSampler) {
       pianoSampler = new Tone.Sampler({
@@ -391,11 +345,9 @@
       }).toDestination();
     }
     await Tone.loaded();
-
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-
     untrack(() => {
       for (const n of allNotes) {
         transport.schedule((time) => {
@@ -403,11 +355,9 @@
         }, n.time);
       }
     });
-
     transport.start();
     requestAnimationFrame(animate);
   }
-
   function stopMidi() {
     isPlaying = false;
     isPaused = false;
@@ -424,7 +374,6 @@
     currentTime = 0;
     drawAll();
   }
-
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
@@ -441,7 +390,6 @@
       requestAnimationFrame(animate);
     }
   }
-
   function handleCanvasClick() {
     if (!isPlaying) {
       playMidi();
@@ -449,7 +397,46 @@
       togglePauseResume();
     }
   }
-
+  // --- SLIDER HANDLERS ---
+  // When the user presses down on the slider, if playback is active, pause it.
+  let isSliding = $state(false);
+  let wasPlayingBeforeSlide = $state(false);
+  function handleSliderMouseDown(e: MouseEvent) {
+    if (isPlaying && !isPaused) {
+      wasPlayingBeforeSlide = true;
+      Tone.getTransport().pause();
+      isPaused = true;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    }
+    isSliding = true;
+  }
+  // While sliding, update the current time and redraw.
+  function handleSliderInput(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    currentTime = val;
+    if (val >= totalDuration) {
+      stopMidi();
+    } else {
+      animationStartTime = performance.now() - val * 1000;
+      Tone.getTransport().seconds = val;
+      drawAll();
+    }
+  }
+  // When the user releases the slider, resume playback if it was active.
+  function handleSliderMouseUp() {
+    if (wasPlayingBeforeSlide) {
+      const val = currentTime;
+      Tone.getTransport().start(undefined, val);
+      isPaused = false;
+      animationStartTime = performance.now() - val * 1000;
+      requestAnimationFrame(animate);
+      wasPlayingBeforeSlide = false;
+    }
+    isSliding = false;
+  }
   function toggleFullscreen() {
     if (!document.fullscreenElement) {
       containerDiv
@@ -471,35 +458,19 @@
         });
     }
   }
-
   function formatTime(seconds: number) {
     const floored = Math.floor(seconds);
     const m = Math.floor(floored / 60);
     const s = floored % 60;
     return `${m}:${String(s).padStart(2, "0")}`;
   }
-
-  function handleSliderChange(e: Event) {
-    const val = parseFloat((e.target as HTMLInputElement).value);
-    currentTime = val;
-    if (val >= totalDuration) {
-      stopMidi();
-    } else {
-      animationStartTime = performance.now() - val * 1000;
-      Tone.getTransport().seconds = val;
-      drawAll();
-    }
-  }
-
   let currentTimeFormatted = $derived(formatTime(currentTime));
   let totalDurationFormatted = $derived(formatTime(totalDuration));
-
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
     drawAll();
   });
-
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -507,25 +478,21 @@
       drawAll();
     });
     ro.observe(containerDiv);
-
     const handleWindowResize = () => {
       initCanvas();
       drawAll();
     };
     window.addEventListener("resize", handleWindowResize);
-
     return () => {
       ro.disconnect();
       window.removeEventListener("resize", handleWindowResize);
     };
   });
-
   if (typeof window !== "undefined") {
     document.addEventListener("fullscreenchange", () => {
       isFullscreen = !!document.fullscreenElement;
     });
   }
-
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -547,7 +514,6 @@
     <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
-
   {#if allNotes.length > 0}
     <div
       class="flex items-center justify-center gap-4 text-white"
@@ -592,19 +558,20 @@
           </Button>
         </div>
       {/if}
-
       <div class="mt-4 flex w-full items-center gap-4 text-white">
         <span>{currentTimeFormatted}</span>
         <Slider
           value={currentTime}
           max={totalDuration}
-          onInput={handleSliderChange}
+          onmousedown={handleSliderMouseDown}
+          oninput={handleSliderInput}
+          onmouseup={handleSliderMouseUp}
+          onchange={handleSliderMouseUp}
         />
         <span>{totalDurationFormatted}</span>
       </div>
     </div>
   {/if}
-
   <div
     class={isFullscreen
       ? "flex-1 overflow-hidden bg-black"
