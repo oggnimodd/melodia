@@ -336,7 +336,7 @@
       // draw note name in center if there's enough space
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
-        c.font = "bold 12px sans-serif"; // bolder font
+        c.font = "bold 12px sans-serif";
         c.textAlign = "center";
         c.textBaseline = "middle";
         c.fillText(
@@ -389,11 +389,8 @@
       return;
     }
 
-    const timeSinceLastFrame = timestamp - lastFrameTime;
-    if (timeSinceLastFrame >= 1000 / 60) {
-      drawAll();
-      lastFrameTime = timestamp;
-    }
+    drawAll();
+    lastFrameTime = timestamp;
 
     animationFrameId = requestAnimationFrame(animate);
   }
