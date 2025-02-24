@@ -39,6 +39,11 @@
   let animationStartTime = $state(0);
   let lastTransportTime = $state(0);
 
+  // We'll track the logical (CSS) width/height of the canvas so we can draw in correct coords
+  let canvasCssWidth = 0;
+  let canvasCssHeight = 0;
+
+  // -- DERIVED STATES (unchanged) --
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
   // -- CONSTANTS --
@@ -89,30 +94,24 @@
     ];
     return names[midi % 12];
   }
-
   function getOctaveLayout(midi: number) {
     return octaveLayout[midi % 12];
   }
-
   function getLayoutOffsetRaw(midi: number) {
     const noteOctave = Math.floor(midi / 12);
     return noteOctave * 7 + getOctaveLayout(midi).offset;
   }
-
   function getKeyX(midi: number): number {
     return (getLayoutOffsetRaw(midi) - leftOffset) * scale;
   }
-
   function getKeyWidth(midi: number): number {
     return getOctaveLayout(midi).isBlack
       ? scale * CONFIG.blackKeyWidthRatio
       : scale;
   }
-
   function isBlackKey(midi: number): boolean {
     return getOctaveLayout(midi).isBlack;
   }
-
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
     for (const note of allNotes) {
@@ -179,20 +178,40 @@
 
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
-    canvas.width = containerWidth;
+
+    // figure out final size in CSS pixels
+    let finalWidth = containerWidth;
+    let finalHeight = 0;
 
     if (isFullscreen) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
-      canvas.height = availableHeight > 0 ? availableHeight : containerHeight;
+      finalHeight = availableHeight > 0 ? availableHeight : containerHeight;
     } else {
-      canvas.height = window.innerHeight * 0.7;
+      finalHeight = window.innerHeight * 0.7;
     }
+
+    // handle devicePixelRatio for sharp rendering
+    const dpr = window.devicePixelRatio || 1;
+    canvasCssWidth = finalWidth;
+    canvasCssHeight = finalHeight;
+
+    // set canvas to device-pixel size
+    canvas.width = finalWidth * dpr;
+    canvas.height = finalHeight * dpr;
+    canvas.style.width = finalWidth + "px";
+    canvas.style.height = finalHeight + "px";
 
     const context = canvas.getContext("2d");
     if (!context) return;
+
+    // scale so 1 "unit" in code = 1 CSS pixel
+    context.scale(dpr, dpr);
+    context.imageSmoothingEnabled = false;
     ctx = context;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // clear once
+    ctx.clearRect(0, 0, finalWidth, finalHeight);
 
     if (!allNotes.length) return;
 
@@ -212,75 +231,84 @@
     }
 
     leftOffset = newLeftOffset;
-    scale = canvas.width / totalWidthUnits;
+
+    // scale is in CSS pixels
+    scale = finalWidth / totalWidthUnits;
   }
 
+  // DRAWING FUNCTIONS
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
-    const pianoHeight = canvas.height * CONFIG.pianoHeightRatio;
-    const startY = canvas.height - pianoHeight;
+
+    const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
+    const startY = canvasCssHeight - pianoHeight;
     const active = getActiveKeys(currentTime);
 
-    // Calculate visible range of keys
-    const totalWidthUnits = canvas.width / scale;
+    // figure out which keys to draw
+    const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
 
-    // Draw white keys
+    // white keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const isActive = active.has(midi);
+
       c.fillStyle = isActive
         ? CONFIG.activeWhiteKeyColor
         : CONFIG.whiteKeyColor;
       c.fillRect(x, startY, w - 1, pianoHeight);
+
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
 
-    // Draw black keys
+    // black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const isActive = active.has(midi);
+
       c.fillStyle = isActive
         ? CONFIG.activeBlackKeyColor
         : CONFIG.blackKeyColor;
       c.fillRect(x, startY, w, h);
     }
 
-    // Draw labels
+    // label on white keys (smaller font)
     c.fillStyle = CONFIG.fontColor;
-    c.font = "bold 16px sans-serif";
+    c.font = "500 13px sans-serif";
     c.textAlign = "center";
     c.textBaseline = "middle";
+
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi);
       const w = getKeyWidth(midi);
-      c.fillText(midiToNoteNameNoOctave(midi), x + w / 2, canvas.height - 10);
+      c.fillText(midiToNoteNameNoOctave(midi), x + w / 2, canvasCssHeight - 10);
     }
   }
 
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
-    const pianoTopY = canvas.height - canvas.height * CONFIG.pianoHeightRatio;
+
+    // how far notes fall
+    const pianoTopY =
+      canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio;
     const speed = pianoTopY / CONFIG.visibleSeconds;
 
-    // Calculate visible range
+    // figure out which notes are visible
     const visibleStart = currentTime - CONFIG.visibleSeconds;
     const visibleEnd = currentTime + CONFIG.visibleSeconds;
-
-    // Find visible notes
     const startIdx = allNotes.findIndex(
       (n) => n.time + n.duration >= visibleStart
     );
@@ -305,9 +333,10 @@
         : CONFIG.inactiveNoteColor;
       c.fillRect(x, topY, w, noteHeight);
 
+      // draw note name in center if there's enough space
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
-        c.font = "10px sans-serif";
+        c.font = "bold 12px sans-serif"; // bolder font
         c.textAlign = "center";
         c.textBaseline = "middle";
         c.fillText(
@@ -321,7 +350,10 @@
 
   function drawAll() {
     if (!ctx || !canvas) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // clear the entire "CSS pixel" area
+    ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
+
     if (!midiFile || allNotes.length === 0) return;
 
     untrack(() => {
@@ -352,13 +384,11 @@
     }
 
     currentTime = newCurrentTime;
-
     if (currentTime >= totalDuration) {
       stopMidi();
       return;
     }
 
-    // Frame limiting
     const timeSinceLastFrame = timestamp - lastFrameTime;
     if (timeSinceLastFrame >= 1000 / 60) {
       drawAll();
@@ -371,7 +401,6 @@
   // -- PLAYBACK CONTROLS --
   async function playMidi() {
     if (!allNotes.length) return;
-
     isPlaying = true;
     isPaused = false;
     currentTime = 0;
@@ -380,7 +409,6 @@
     lastTransportTime = 0;
 
     await Tone.start();
-
     if (!pianoSampler) {
       pianoSampler = new Tone.Sampler({
         urls: {
@@ -393,7 +421,6 @@
         baseUrl: "https://tonejs.github.io/audio/salamander/",
       }).toDestination();
     }
-
     await Tone.loaded();
 
     const transport = Tone.getTransport();
@@ -407,6 +434,7 @@
         }, n.time);
       }
     });
+
     transport.start();
     requestAnimationFrame(animate);
   }
@@ -430,7 +458,6 @@
 
   function togglePauseResume() {
     if (!isPlaying) return;
-
     if (!isPaused) {
       Tone.getTransport().pause();
       isPaused = true;
