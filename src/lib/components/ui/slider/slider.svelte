@@ -16,105 +16,114 @@
     ...rest
   }: SliderProps = $props();
 
+  let sliderElement: HTMLInputElement;
+
   function updateSliderFill(slider: HTMLInputElement) {
     const minVal = slider.min ? parseFloat(slider.min) : 0;
     const maxVal = slider.max ? parseFloat(slider.max) : 100;
     const val = slider.value ? parseFloat(slider.value) : 0;
     const percent = ((val - minVal) * 100) / (maxVal - minVal);
-    slider.style.setProperty("--slider-fill", percent + "%");
+    slider.style.setProperty("--slider-fill", `${percent}%`);
   }
 
   function handleInput(e: Event) {
     updateSliderFill(e.target as HTMLInputElement);
     onInput?.(e);
   }
+
+  $effect(() => {
+    if (sliderElement && value) {
+      updateSliderFill(sliderElement);
+    }
+  });
 </script>
 
-<input
-  type="range"
-  {min}
-  {max}
-  {step}
-  {value}
-  oninput={handleInput}
-  class="custom-slider w-full"
-  {...rest}
-/>
+<div class="slider-container">
+  <input
+    bind:this={sliderElement}
+    type="range"
+    {min}
+    {max}
+    {step}
+    {value}
+    oninput={handleInput}
+    class="range-slider"
+    {...rest}
+  />
+</div>
 
 <style>
-  input[type="range"].custom-slider {
-    appearance: none;
-    width: 100%;
-    height: 8px;
-    border-radius: 9999px;
-    outline: none;
-    transition: background 0.2s;
+  .slider-container {
+    @apply relative flex h-5 w-full items-center;
+  }
+
+  .range-slider {
+    @apply relative h-2 w-full appearance-none bg-transparent outline-none;
+  }
+
+  /* Track styles */
+  .range-slider::-webkit-slider-runnable-track {
+    @apply h-2 w-full rounded-full;
     background: linear-gradient(
       to right,
-      #fff 0%,
-      #fff var(--slider-fill, 0%),
-      #333 var(--slider-fill, 0%),
-      #333 100%
+      hsl(0, 0%, 100%) 0%,
+      hsl(0, 0%, 100%) var(--slider-fill, 0%),
+      hsl(0, 0%, 20%) var(--slider-fill, 0%),
+      hsl(0, 0%, 20%) 100%
     );
   }
-  input[type="range"].custom-slider::-webkit-slider-runnable-track {
-    height: 8px;
-    border-radius: 9999px;
-    background: transparent;
+
+  .range-slider::-moz-range-track {
+    @apply h-2 w-full rounded-full;
+    background: hsl(0, 0%, 20%);
   }
-  input[type="range"].custom-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #fff;
-    border: 2px solid #000;
-    border-radius: 9999px;
-    margin-top: -6px;
-    cursor: pointer;
-    transition:
-      border-color 0.2s,
-      background-color 0.2s;
+
+  .range-slider::-moz-range-progress {
+    @apply h-2 rounded-full;
+    background: hsl(0, 0%, 100%);
   }
-  input[type="range"].custom-slider::-moz-range-track {
-    height: 8px;
-    border-radius: 9999px;
-    background: #333;
+
+  /* Thumb styles */
+  .range-slider::-webkit-slider-thumb {
+    @apply relative z-10 -mt-1.5 h-5 w-5 cursor-pointer appearance-none rounded-full;
+    background: hsl(0, 0%, 0%);
+    border: 2px solid hsl(0, 0%, 100%);
   }
-  input[type="range"].custom-slider::-moz-range-progress {
-    height: 8px;
-    border-radius: 9999px;
-    background: #fff;
+
+  .range-slider::-moz-range-thumb {
+    @apply relative z-10 h-5 w-5 cursor-pointer rounded-full;
+    background: hsl(0, 0%, 0%);
+    border: 2px solid hsl(0, 0%, 100%);
   }
-  input[type="range"].custom-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: #000;
-    border: 2px solid #fff;
-    border-radius: 9999px;
-    cursor: pointer;
+
+  /* Focus styles */
+  .range-slider:focus {
+    @apply outline-none;
   }
-  input[type="range"].custom-slider::-ms-track {
-    width: 100%;
-    height: 8px;
-    background: transparent;
-    border-color: transparent;
-    color: transparent;
+
+  .range-slider:focus::-webkit-slider-thumb {
+    box-shadow: 0 0 0 2px hsl(0, 0%, 10%);
   }
-  input[type="range"].custom-slider::-ms-fill-lower {
-    background: #fff;
-    border-radius: 9999px;
+
+  .range-slider:focus::-moz-range-thumb {
+    box-shadow: 0 0 0 2px hsl(0, 0%, 10%);
   }
-  input[type="range"].custom-slider::-ms-fill-upper {
-    background: #333;
-    border-radius: 9999px;
+
+  /* Hover styles */
+  .range-slider:hover::-webkit-slider-thumb {
+    background: hsl(0, 0%, 10%);
   }
-  input[type="range"].custom-slider::-ms-thumb {
-    width: 20px;
-    height: 20px;
-    background: #fff;
-    border: 2px solid #000;
-    border-radius: 9999px;
-    cursor: pointer;
-    margin-top: 0px;
+
+  .range-slider:hover::-moz-range-thumb {
+    background: hsl(0, 0%, 10%);
+  }
+
+  /* Active styles */
+  .range-slider:active::-webkit-slider-thumb {
+    background: hsl(0, 0%, 0%);
+  }
+
+  .range-slider:active::-moz-range-thumb {
+    background: hsl(0, 0%, 0%);
   }
 </style>
