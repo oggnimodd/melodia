@@ -1,5 +1,7 @@
 <script lang="ts">
-  interface SliderProps {
+  import type { HTMLInputAttributes } from "svelte/elements";
+
+  interface SliderProps extends HTMLInputAttributes {
     value: number;
     max: number;
     min?: number;
