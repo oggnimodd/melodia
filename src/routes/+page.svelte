@@ -9,7 +9,7 @@
   import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
   import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
 
@@ -40,6 +40,15 @@
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
   let totalDuration = $derived(midiData?.totalDuration || 0);
+
+  // Add these variables for swipe detection
+  let startY = $state<number | null>(null);
+  let startX = $state<number | null>(null);
+  let lastY = $state<number | null>(null);
+  let isSwiping = $state(false);
+  let swipeThreshold = 15; // Pixels to consider as swipe vs click
+  let wasPlayingBeforeInteraction = $state(false);
+  let initialTimeBeforeSwipe = $state(0);
 
   const octaveLayout = [
     { semitone: 0, isBlack: false, offset: 0 },
@@ -390,13 +399,6 @@
       requestAnimationFrame(animate);
     }
   }
-  function handleCanvasClick() {
-    if (!isPlaying) {
-      playMidi();
-    } else {
-      togglePauseResume();
-    }
-  }
   // --- SLIDER HANDLERS ---
   // When the user presses down on the slider, if playback is active, pause it.
   let isSliding = $state(false);
@@ -488,11 +490,6 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
-  if (typeof window !== "undefined") {
-    document.addEventListener("fullscreenchange", () => {
-      isFullscreen = !!document.fullscreenElement;
-    });
-  }
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -501,6 +498,134 @@
     transport.stop();
     transport.cancel(0);
     isPlaying = false;
+  });
+
+  let pianoTopY = $derived(
+    canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio
+  );
+
+  function handleCanvasPointerDown(e: PointerEvent) {
+    // Only record left clicks
+    if (e.button !== 0) return;
+
+    // Record the starting point
+    startX = e.clientX;
+    startY = e.clientY;
+    lastY = e.clientY;
+    isSwiping = false;
+
+    // Remember playback state
+    wasPlayingBeforeInteraction = isPlaying && !isPaused;
+    initialTimeBeforeSwipe = currentTime;
+
+    // If playing, temporarily pause
+    if (isPlaying && !isPaused) {
+      Tone.getTransport().pause();
+      isPaused = true;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    }
+
+    // Capture pointer events
+    if (canvas) {
+      canvas.setPointerCapture(e.pointerId);
+    }
+  }
+
+  function handleCanvasPointerMove(e: PointerEvent) {
+    if (startY === null) return;
+
+    const deltaY = e.clientY - startY;
+
+    // Only consider Y movement for swiping detection
+    if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
+      isSwiping = true;
+    }
+
+    // If swiping, update time based on vertical movement
+    if (isSwiping) {
+      // Calculate distance since last move
+      const yDiff = lastY !== null ? e.clientY - lastY : 0;
+
+      // Update current time based on swipe (positive deltaY = move forward in time)
+      const timeAdjustment = (yDiff / pianoTopY) * CONFIG.visibleSeconds;
+      currentTime = Math.max(
+        0,
+        Math.min(totalDuration, currentTime + timeAdjustment)
+      );
+
+      // Update transport position
+      Tone.getTransport().seconds = currentTime;
+
+      // Update animation start time
+      animationStartTime = performance.now() - currentTime * 1000;
+
+      // Redraw
+      drawAll();
+
+      // Update last Y position
+      lastY = e.clientY;
+    }
+  }
+
+  function handleCanvasPointerUp(e: PointerEvent) {
+    // Only consider left clicks
+    if (e.button !== 0) return;
+
+    if (startY === null) return;
+
+    const deltaY = Math.abs(e.clientY - startY);
+
+    if (deltaY < swipeThreshold) {
+      // It was a genuine click
+      if (!isPlaying) {
+        // Not playing at all -> start playing
+        playMidi();
+      } else if (isPaused && !wasPlayingBeforeInteraction) {
+        // Was already paused before this interaction -> resume
+        togglePauseResume();
+      } else if (wasPlayingBeforeInteraction) {
+        // Was playing before interaction and auto-paused -> keep paused
+        // Do nothing, leave it paused
+      } else {
+        // Other cases -> toggle pause/resume
+        togglePauseResume();
+      }
+    } else {
+      // It was a swipe
+      if (wasPlayingBeforeInteraction) {
+        // Resume playback at new position if it was playing before
+        Tone.getTransport().start(undefined, currentTime);
+        isPaused = false;
+        animationStartTime = performance.now() - currentTime * 1000;
+        requestAnimationFrame(animate);
+      }
+    }
+
+    // Reset variables
+    startX = null;
+    startY = null;
+    lastY = null;
+    isSwiping = false;
+  }
+
+  onMount(() => {
+    if (browser) {
+      const handleFullscreenChange = () => {
+        isFullscreen = !!document.fullscreenElement;
+      };
+
+      document.addEventListener("fullscreenchange", handleFullscreenChange);
+
+      return () => {
+        document.removeEventListener(
+          "fullscreenchange",
+          handleFullscreenChange
+        );
+      };
+    }
   });
 </script>
 
@@ -577,7 +702,12 @@
       ? "flex-1 overflow-hidden bg-black"
       : "mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black"}
   >
-    <canvas bind:this={canvas} class="w-full" onclick={handleCanvasClick}
+    <canvas
+      bind:this={canvas}
+      class="w-full"
+      onpointerdown={handleCanvasPointerDown}
+      onpointermove={handleCanvasPointerMove}
+      onpointerup={handleCanvasPointerUp}
     ></canvas>
   </div>
 </div>
