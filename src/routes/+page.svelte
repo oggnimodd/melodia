@@ -52,7 +52,7 @@
   let canvasCssHeight = 0;
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
-  // Add these variables for swipe detection
+  // Swiping detection
   let startY = $state<number | null>(null);
   let startX = $state<number | null>(null);
   let lastY = $state<number | null>(null);
@@ -60,6 +60,7 @@
   let swipeThreshold = 15; // Pixels to consider as swipe vs click
   let wasPlayingBeforeInteraction = $state(false);
   let initialTimeBeforeSwipe = $state(0);
+  let activePointerId: number | null = $state(null);
 
   // Fullscreen
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
@@ -470,6 +471,13 @@
 
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    // If another pointer is already active, ignore new ones.
+    if (activePointerId !== null && e.pointerId !== activePointerId) {
+      return;
+    }
+    activePointerId = e.pointerId;
+
     startX = e.clientX;
     startY = e.clientY;
     lastY = e.clientY;
@@ -490,6 +498,9 @@
   }
 
   function handleCanvasPointerMove(e: PointerEvent) {
+    // Only handle moves for the active pointer.
+    if (e.pointerId !== activePointerId) return;
+
     if (startY === null) return;
     const deltaY = e.clientY - startY;
     if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
@@ -511,6 +522,10 @@
 
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    // Only handle the up event if it's from the active pointer.
+    if (e.pointerId !== activePointerId) return;
+
     if (startY === null) return;
     const deltaY = Math.abs(e.clientY - startY);
     if (deltaY < swipeThreshold) {
@@ -535,6 +550,7 @@
     startY = null;
     lastY = null;
     isSwiping = false;
+    activePointerId = null;
   }
 
   function pauseAtEnd() {
