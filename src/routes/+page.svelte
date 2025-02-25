@@ -5,13 +5,13 @@
   import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Input } from "$lib/components/ui/input";
   import IconPlayerPlay from "@tabler/icons-svelte/icons/player-play-filled";
-  import IconPlayerStop from "@tabler/icons-svelte/icons/player-stop-filled";
   import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
   import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
   import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
+  import { cn } from "$lib/utils";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -128,7 +128,7 @@
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       if (isPlaying) {
-        stopMidi();
+        haltPlayback();
       }
       midiData = null;
       allNotes = [];
@@ -325,7 +325,7 @@
     }
     currentTime = newCurrentTime;
     if (currentTime >= totalDuration) {
-      stopMidi();
+      pauseAtEnd();
       return;
     }
     drawAll();
@@ -367,22 +367,6 @@
     transport.start();
     requestAnimationFrame(animate);
   }
-  function stopMidi() {
-    isPlaying = false;
-    isPaused = false;
-    if (animationFrameId) {
-      cancelAnimationFrame(animationFrameId);
-      animationFrameId = null;
-    }
-    const transport = Tone.getTransport();
-    transport.cancel(0);
-    transport.stop();
-    if (pianoSampler) {
-      pianoSampler.releaseAll();
-    }
-    currentTime = 0;
-    drawAll();
-  }
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
@@ -399,8 +383,15 @@
       requestAnimationFrame(animate);
     }
   }
+  // New single-button handler
+  function handlePlayButtonClick() {
+    if (!isPlaying || currentTime >= totalDuration) {
+      playMidi();
+    } else {
+      togglePauseResume();
+    }
+  }
   // --- SLIDER HANDLERS ---
-  // When the user presses down on the slider, if playback is active, pause it.
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
   function handleSliderMouseDown(e: MouseEvent) {
@@ -415,19 +406,21 @@
     }
     isSliding = true;
   }
-  // While sliding, update the current time and redraw.
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
     if (val >= totalDuration) {
-      stopMidi();
+      // If slider reaches the end, pause playback.
+      Tone.getTransport().pause();
+      isPlaying = false;
+      isPaused = true;
+      drawAll();
     } else {
       animationStartTime = performance.now() - val * 1000;
       Tone.getTransport().seconds = val;
       drawAll();
     }
   }
-  // When the user releases the slider, resume playback if it was active.
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -505,20 +498,13 @@
   );
 
   function handleCanvasPointerDown(e: PointerEvent) {
-    // Only record left clicks
     if (e.button !== 0) return;
-
-    // Record the starting point
     startX = e.clientX;
     startY = e.clientY;
     lastY = e.clientY;
     isSwiping = false;
-
-    // Remember playback state
     wasPlayingBeforeInteraction = isPlaying && !isPaused;
     initialTimeBeforeSwipe = currentTime;
-
-    // If playing, temporarily pause
     if (isPlaying && !isPaused) {
       Tone.getTransport().pause();
       isPaused = true;
@@ -527,8 +513,6 @@
         animationFrameId = null;
       }
     }
-
-    // Capture pointer events
     if (canvas) {
       canvas.setPointerCapture(e.pointerId);
     }
@@ -536,79 +520,74 @@
 
   function handleCanvasPointerMove(e: PointerEvent) {
     if (startY === null) return;
-
     const deltaY = e.clientY - startY;
-
-    // Only consider Y movement for swiping detection
     if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
       isSwiping = true;
     }
-
-    // If swiping, update time based on vertical movement
     if (isSwiping) {
-      // Calculate distance since last move
       const yDiff = lastY !== null ? e.clientY - lastY : 0;
-
-      // Update current time based on swipe (positive deltaY = move forward in time)
       const timeAdjustment = (yDiff / pianoTopY) * CONFIG.visibleSeconds;
       currentTime = Math.max(
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
-
-      // Update transport position
       Tone.getTransport().seconds = currentTime;
-
-      // Update animation start time
       animationStartTime = performance.now() - currentTime * 1000;
-
-      // Redraw
       drawAll();
-
-      // Update last Y position
       lastY = e.clientY;
     }
   }
 
   function handleCanvasPointerUp(e: PointerEvent) {
-    // Only consider left clicks
     if (e.button !== 0) return;
-
     if (startY === null) return;
-
     const deltaY = Math.abs(e.clientY - startY);
-
     if (deltaY < swipeThreshold) {
-      // It was a genuine click
       if (!isPlaying) {
-        // Not playing at all -> start playing
         playMidi();
       } else if (isPaused && !wasPlayingBeforeInteraction) {
-        // Was already paused before this interaction -> resume
         togglePauseResume();
       } else if (wasPlayingBeforeInteraction) {
-        // Was playing before interaction and auto-paused -> keep paused
-        // Do nothing, leave it paused
+        // Leave it paused
       } else {
-        // Other cases -> toggle pause/resume
         togglePauseResume();
       }
     } else {
-      // It was a swipe
       if (wasPlayingBeforeInteraction) {
-        // Resume playback at new position if it was playing before
         Tone.getTransport().start(undefined, currentTime);
         isPaused = false;
         animationStartTime = performance.now() - currentTime * 1000;
         requestAnimationFrame(animate);
       }
     }
-
-    // Reset variables
     startX = null;
     startY = null;
     lastY = null;
     isSwiping = false;
+  }
+
+  function pauseAtEnd() {
+    Tone.getTransport().pause();
+    isPlaying = false;
+    isPaused = true;
+    currentTime = totalDuration;
+    drawAll();
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+  }
+
+  function haltPlayback() {
+    Tone.getTransport().pause();
+    isPlaying = false;
+    isPaused = true;
+    currentTime = 0;
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+    drawAll();
   }
 
   onMount(() => {
@@ -648,30 +627,21 @@
       {#if midiFile}
         <div class="mt-4 flex items-center gap-x-3">
           <Button
-            class="bg-green-500 hover:bg-green-600"
+            class={cn("", {
+              "bg-green-500 hover:bg-green-600":
+                !isPlaying || currentTime >= totalDuration,
+              "bg-yellow-500 hover:bg-yellow-600": isPlaying && !isPaused,
+              "bg-blue-500 hover:bg-blue-600": isPlaying && isPaused,
+            })}
             size="icon-sm"
-            disabled={isPlaying}
-            onclick={playMidi}
+            onclick={handlePlayButtonClick}
           >
-            <IconPlayerPlay />
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="destructive"
-            disabled={!isPlaying}
-            onclick={stopMidi}
-          >
-            <IconPlayerStop />
-          </Button>
-          <Button
-            size="icon-sm"
-            disabled={!isPlaying}
-            onclick={togglePauseResume}
-          >
-            {#if isPaused}
-              <IconPlayerResume />
-            {:else}
+            {#if !isPlaying || currentTime >= totalDuration}
+              <IconPlayerPlay />
+            {:else if isPlaying && !isPaused}
               <IconPlayerPause />
+            {:else}
+              <IconPlayerResume />
             {/if}
           </Button>
           <Button
