@@ -647,6 +647,7 @@
     <canvas
       bind:this={canvas}
       class="w-full"
+      style="touch-action: none;"
       onpointerdown={handleCanvasPointerDown}
       onpointermove={handleCanvasPointerMove}
       onpointerup={handleCanvasPointerUp}
