@@ -7,6 +7,8 @@
   import IconPlayerPlay from "@tabler/icons-svelte/icons/player-play-filled";
   import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
   import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
+  import IconPlayerSkipBack from "@tabler/icons-svelte/icons/player-skip-back-filled";
+  import IconPlayerSkipForward from "@tabler/icons-svelte/icons/player-skip-forward-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
   import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
@@ -383,7 +385,7 @@
       requestAnimationFrame(animate);
     }
   }
-  // New single-button handler
+
   function handlePlayButtonClick() {
     if (!isPlaying || currentTime >= totalDuration) {
       playMidi();
@@ -391,6 +393,53 @@
       togglePauseResume();
     }
   }
+
+  // --- SEEK HANDLERS ---
+  function seekBackward() {
+    let newTime = currentTime - 5;
+    if (newTime < 0) newTime = 0;
+    currentTime = newTime;
+
+    // Cancel any current animation frame.
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+
+    // If playback is active, re-sync the transport.
+    if (isPlaying && !isPaused) {
+      Tone.getTransport().pause();
+      Tone.getTransport().start(undefined, newTime);
+      animationStartTime = performance.now() - newTime * 1000;
+      requestAnimationFrame(animate);
+    } else {
+      // Just update the canvas if paused.
+      animationStartTime = performance.now() - newTime * 1000;
+      drawAll();
+    }
+  }
+
+  function seekForward() {
+    let newTime = currentTime + 5;
+    if (newTime > totalDuration) newTime = totalDuration;
+    currentTime = newTime;
+
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+    }
+
+    if (isPlaying && !isPaused) {
+      Tone.getTransport().pause();
+      Tone.getTransport().start(undefined, newTime);
+      animationStartTime = performance.now() - newTime * 1000;
+      requestAnimationFrame(animate);
+    } else {
+      animationStartTime = performance.now() - newTime * 1000;
+      drawAll();
+    }
+  }
+
   // --- SLIDER HANDLERS ---
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
@@ -643,6 +692,24 @@
             {:else}
               <IconPlayerResume />
             {/if}
+          </Button>
+          <!-- New seek backward button -->
+          <Button
+            class="bg-purple-500 hover:bg-purple-600"
+            size="icon-sm"
+            disabled={!midiFile || currentTime <= 0}
+            onmouseup={seekBackward}
+          >
+            <IconPlayerSkipBack />
+          </Button>
+          <!-- New seek forward button -->
+          <Button
+            class="bg-purple-500 hover:bg-purple-600"
+            size="icon-sm"
+            disabled={!midiFile || currentTime >= totalDuration}
+            onmouseup={seekForward}
+          >
+            <IconPlayerSkipForward />
           </Button>
           <Button
             size="icon-sm"
