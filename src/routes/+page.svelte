@@ -14,6 +14,16 @@
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
   import { cn } from "$lib/utils";
+  import {
+    CONFIG,
+    midiToNoteNameNoOctave,
+    getLayoutOffsetRaw,
+    getKeyX,
+    getKeyWidth,
+    isBlackKey,
+  } from "$lib/utils/piano";
+  import { formatSecondsToTime } from "$lib/utils/time";
+  import type { Notes } from "$lib/models/midi";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -21,9 +31,7 @@
   let ctx = $state<CanvasRenderingContext2D | null>(null);
   let midiFile = $state<File | null>(null);
   let midiData = $state<Awaited<ReturnType<typeof parseMidiFile>> | null>(null);
-  let allNotes = $state<
-    Array<{ time: number; duration: number; midi: number; name: string }>
-  >([]);
+  let allNotes = $state<Notes>([]);
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
   let isPaused = $state(false);
@@ -52,70 +60,6 @@
   let wasPlayingBeforeInteraction = $state(false);
   let initialTimeBeforeSwipe = $state(0);
 
-  const octaveLayout = [
-    { semitone: 0, isBlack: false, offset: 0 },
-    { semitone: 1, isBlack: true, offset: 0.65 },
-    { semitone: 2, isBlack: false, offset: 1 },
-    { semitone: 3, isBlack: true, offset: 1.65 },
-    { semitone: 4, isBlack: false, offset: 2 },
-    { semitone: 5, isBlack: false, offset: 3 },
-    { semitone: 6, isBlack: true, offset: 3.65 },
-    { semitone: 7, isBlack: false, offset: 4 },
-    { semitone: 8, isBlack: true, offset: 4.65 },
-    { semitone: 9, isBlack: false, offset: 5 },
-    { semitone: 10, isBlack: true, offset: 5.65 },
-    { semitone: 11, isBlack: false, offset: 6 },
-  ];
-
-  const CONFIG = {
-    pianoHeightRatio: 0.15,
-    blackKeyHeightRatio: 0.6,
-    blackKeyWidthRatio: 0.6,
-    visibleSeconds: 3,
-    whiteKeyColor: "#ffffff",
-    blackKeyColor: "#000000",
-    activeWhiteKeyColor: "#ffcc00",
-    activeBlackKeyColor: "#ff9900",
-    inactiveNoteColor: "#2196F3",
-    activeNoteColor: "#4CAF50",
-    fontColor: "#000000",
-  };
-
-  function midiToNoteNameNoOctave(midi: number): string {
-    const names = [
-      "C",
-      "C#",
-      "D",
-      "D#",
-      "E",
-      "F",
-      "F#",
-      "G",
-      "G#",
-      "A",
-      "A#",
-      "B",
-    ];
-    return names[midi % 12];
-  }
-  function getOctaveLayout(midi: number) {
-    return octaveLayout[midi % 12];
-  }
-  function getLayoutOffsetRaw(midi: number) {
-    const noteOctave = Math.floor(midi / 12);
-    return noteOctave * 7 + getOctaveLayout(midi).offset;
-  }
-  function getKeyX(midi: number): number {
-    return (getLayoutOffsetRaw(midi) - leftOffset) * scale;
-  }
-  function getKeyWidth(midi: number): number {
-    return getOctaveLayout(midi).isBlack
-      ? scale * CONFIG.blackKeyWidthRatio
-      : scale;
-  }
-  function isBlackKey(midi: number): boolean {
-    return getOctaveLayout(midi).isBlack;
-  }
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
     for (const note of allNotes) {
@@ -224,8 +168,8 @@
     );
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi);
-      const w = getKeyWidth(midi);
+      const x = getKeyX(midi, leftOffset, scale);
+      const w = getKeyWidth(midi, scale);
       const isActive = active.has(midi);
       c.fillStyle = isActive
         ? CONFIG.activeWhiteKeyColor
@@ -236,8 +180,8 @@
     }
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
-      const x = getKeyX(midi);
-      const w = getKeyWidth(midi);
+      const x = getKeyX(midi, leftOffset, scale);
+      const w = getKeyWidth(midi, scale);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const isActive = active.has(midi);
       c.fillStyle = isActive
@@ -253,8 +197,8 @@
     const keyYOffset = pianoHeight * 0.11;
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi);
-      const w = getKeyWidth(midi);
+      const x = getKeyX(midi, leftOffset, scale);
+      const w = getKeyWidth(midi, scale);
       c.fillText(
         midiToNoteNameNoOctave(midi),
         x + w / 2,
@@ -282,8 +226,8 @@
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
-      const x = getKeyX(note.midi);
-      const w = getKeyWidth(note.midi) - 2;
+      const x = getKeyX(note.midi, leftOffset, scale);
+      const w = getKeyWidth(note.midi, scale) - 2;
       const isActive =
         currentTime >= note.time && currentTime <= note.time + note.duration;
       c.fillStyle = isActive
@@ -502,14 +446,9 @@
         });
     }
   }
-  function formatTime(seconds: number) {
-    const floored = Math.floor(seconds);
-    const m = Math.floor(floored / 60);
-    const s = floored % 60;
-    return `${m}:${String(s).padStart(2, "0")}`;
-  }
-  let currentTimeFormatted = $derived(formatTime(currentTime));
-  let totalDurationFormatted = $derived(formatTime(totalDuration));
+
+  let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
+  let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
   $effect(() => {
     if (!containerDiv) return;
     initCanvas();
