@@ -24,6 +24,7 @@
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
   import type { Notes } from "$lib/models/midi";
+  import useFullScreen from "$lib/hooks/useFullscreen.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -35,7 +36,7 @@
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
   let isPaused = $state(false);
-  let isFullscreen = $state(false);
+
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
   let minMidi = $state(24);
@@ -59,6 +60,9 @@
   let swipeThreshold = 15; // Pixels to consider as swipe vs click
   let wasPlayingBeforeInteraction = $state(false);
   let initialTimeBeforeSwipe = $state(0);
+
+  // Fullscreen
+  let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
   function getActiveKeys(time: number): Set<number> {
     const active = new Set<number>();
@@ -117,7 +121,7 @@
     const containerWidth = containerDiv.offsetWidth;
     let finalWidth = containerWidth;
     let finalHeight = 0;
-    if (isFullscreen) {
+    if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
       finalHeight = availableHeight > 0 ? availableHeight : containerHeight;
@@ -425,27 +429,6 @@
     }
     isSliding = false;
   }
-  function toggleFullscreen() {
-    if (!document.fullscreenElement) {
-      containerDiv
-        ?.requestFullscreen()
-        .then(() => {
-          isFullscreen = true;
-        })
-        .catch((err) => {
-          console.error("Error attempting to enable full-screen mode:", err);
-        });
-    } else {
-      document
-        .exitFullscreen()
-        .then(() => {
-          isFullscreen = false;
-        })
-        .catch((err) => {
-          console.error("Error attempting to exit full-screen mode:", err);
-        });
-    }
-  }
 
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
@@ -577,39 +560,22 @@
     }
     drawAll();
   }
-
-  onMount(() => {
-    if (browser) {
-      const handleFullscreenChange = () => {
-        isFullscreen = !!document.fullscreenElement;
-      };
-
-      document.addEventListener("fullscreenchange", handleFullscreenChange);
-
-      return () => {
-        document.removeEventListener(
-          "fullscreenchange",
-          handleFullscreenChange
-        );
-      };
-    }
-  });
 </script>
 
 <div
-  class={isFullscreen
+  class={fullscreen.isActive
     ? "m-0 flex h-screen w-full flex-col p-0"
     : "mx-auto max-w-5xl px-4 py-8"}
   bind:this={containerDiv}
 >
-  {#if !isFullscreen}
+  {#if !fullscreen.isActive}
     <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
   {#if allNotes.length > 0}
     <div
       class="flex items-center justify-center gap-4 text-white"
-      class:mt-4={!isFullscreen}
+      class:mt-4={!fullscreen.isActive}
       bind:this={controlsDiv}
     >
       {#if midiFile}
@@ -674,7 +640,7 @@
     </div>
   {/if}
   <div
-    class={isFullscreen
+    class={fullscreen.isActive
       ? "flex-1 overflow-hidden bg-black"
       : "mt-4 overflow-hidden rounded-lg border border-gray-700 bg-black"}
   >
