@@ -61,6 +61,7 @@
   let wasPlayingBeforeInteraction = $state(false);
   let initialTimeBeforeSwipe = $state(0);
   let activePointerId: number | null = $state(null);
+  let swipeFactor = $state(1); // Factor to adjust swipe sensitivity based on canvas height
 
   // Fullscreen
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
@@ -158,7 +159,18 @@
     }
     leftOffset = newLeftOffset;
     scale = finalWidth / totalWidthUnits;
+
+    // Update the swipeFactor based on the new canvas height
+    updateSwipeFactor();
   }
+
+  function updateSwipeFactor() {
+    // Calculate the swipe factor based on the visible piano area
+    const pianoTopY =
+      canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio;
+    swipeFactor = CONFIG.visibleSeconds / pianoTopY;
+  }
+
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -505,10 +517,13 @@
     const deltaY = e.clientY - startY;
     if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
       isSwiping = true;
+      // Make sure swipeFactor is updated with current dimensions
+      updateSwipeFactor();
     }
     if (isSwiping) {
       const yDiff = lastY !== null ? e.clientY - lastY : 0;
-      const timeAdjustment = (yDiff / pianoTopY) * CONFIG.visibleSeconds;
+      // Use the swipeFactor to calculate the time adjustment
+      const timeAdjustment = yDiff * swipeFactor;
       currentTime = Math.max(
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
