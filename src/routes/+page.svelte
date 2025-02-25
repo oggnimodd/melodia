@@ -469,7 +469,7 @@
   );
 
   function handleCanvasPointerDown(e: PointerEvent) {
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     startX = e.clientX;
     startY = e.clientY;
     lastY = e.clientY;
@@ -510,7 +510,7 @@
   }
 
   function handleCanvasPointerUp(e: PointerEvent) {
-    if (e.button !== 0) return;
+    if (e.pointerType === "mouse" && e.button !== 0) return;
     if (startY === null) return;
     const deltaY = Math.abs(e.clientY - startY);
     if (deltaY < swipeThreshold) {
