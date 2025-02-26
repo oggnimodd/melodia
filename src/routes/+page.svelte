@@ -274,24 +274,22 @@
     });
   }
   function animate(timestamp: number) {
+    // Stop if playback isn't active or if we don't have a valid canvas/context.
     if (!isPlaying || !ctx || !canvas) return;
+    // Initialize the start time if it hasn't been set yet.
     if (animationStartTime === 0) {
       animationStartTime = timestamp - currentTime * 1000;
     }
-    const newCurrentTime = (timestamp - animationStartTime) / 1000;
-    if (timestamp - lastTransportTime > 100) {
-      const transportTime = untrack(() => Tone.getTransport().seconds);
-      if (Math.abs(transportTime - newCurrentTime) > 0.1) {
-        animationStartTime = timestamp - transportTime * 1000;
-      }
-      lastTransportTime = timestamp;
-    }
-    currentTime = newCurrentTime;
+    // Update the current time based on the elapsed time.
+    currentTime = (timestamp - animationStartTime) / 1000;
+    // If we reached the end of the track, pause playback.
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
     }
+    // Redraw the canvas.
     drawAll();
+    // Save the current timestamp and request the next frame.
     lastFrameTime = timestamp;
     animationFrameId = requestAnimationFrame(animate);
   }
