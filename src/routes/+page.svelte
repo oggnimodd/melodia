@@ -26,6 +26,7 @@
   import type { Notes } from "$lib/models/midi";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
 
+  // DOM and state refs
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -52,7 +53,10 @@
   let canvasCssHeight = 0;
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
-  // Swiping detection
+  // For syncing with the audio clock
+  let audioStartTime = 0;
+
+  // Swipe detection
   let startY = $state<number | null>(null);
   let startX = $state<number | null>(null);
   let lastY = $state<number | null>(null);
@@ -63,7 +67,7 @@
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1); // Factor to adjust swipe sensitivity based on canvas height
 
-  // Fullscreen
+  // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
   function getActiveKeys(time: number): Set<number> {
@@ -76,6 +80,7 @@
     }
     return active;
   }
+
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -87,6 +92,7 @@
       midiFile = input.files[0];
     }
   }
+
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -117,6 +123,7 @@
       drawAll();
     })();
   });
+
   function initCanvas() {
     if (!containerDiv || !canvas) return;
     const containerHeight = containerDiv.offsetHeight;
@@ -165,7 +172,6 @@
   }
 
   function updateSwipeFactor() {
-    // Calculate the swipe factor based on the visible piano area
     const pianoTopY =
       canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio;
     swipeFactor = CONFIG.visibleSeconds / pianoTopY;
@@ -223,6 +229,7 @@
       );
     }
   }
+
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -264,6 +271,7 @@
       }
     }
   }
+
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
@@ -273,26 +281,23 @@
       drawPianoKeys();
     });
   }
-  function animate(timestamp: number) {
-    // Stop if playback isn't active or if we don't have a valid canvas/context.
+
+  // Use AudioContext clock for animation timing with smoothing to reduce stutter.
+  function animate() {
     if (!isPlaying || !ctx || !canvas) return;
-    // Initialize the start time if it hasn't been set yet.
-    if (animationStartTime === 0) {
-      animationStartTime = timestamp - currentTime * 1000;
-    }
-    // Update the current time based on the elapsed time.
-    currentTime = (timestamp - animationStartTime) / 1000;
-    // If we reached the end of the track, pause playback.
+    // Calculate the elapsed time using Tone's AudioContext
+    const newTime = Tone.getContext().now() - audioStartTime;
+    // Smooth out changes using a simple interpolation
+    const smoothingFactor = 0.1;
+    currentTime += (newTime - currentTime) * smoothingFactor;
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
     }
-    // Redraw the canvas.
     drawAll();
-    // Save the current timestamp and request the next frame.
-    lastFrameTime = timestamp;
     animationFrameId = requestAnimationFrame(animate);
   }
+
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
@@ -310,7 +315,8 @@
           "F#4": "Fs4.mp3",
           A4: "A4.mp3",
         },
-        release: 1,
+        attack: 0,
+        release: 0.6,
         baseUrl: "https://tonejs.github.io/audio/salamander/",
       }).toDestination();
     }
@@ -325,9 +331,12 @@
         }, n.time);
       }
     });
+    // Record the audio clock's start time
+    audioStartTime = Tone.getContext().now();
     transport.start();
     requestAnimationFrame(animate);
   }
+
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
@@ -340,7 +349,8 @@
     } else {
       Tone.getTransport().start(undefined, currentTime);
       isPaused = false;
-      animationStartTime = performance.now() - currentTime * 1000;
+      // Reset the audioStartTime to maintain sync
+      audioStartTime = Tone.getContext().now() - currentTime;
       requestAnimationFrame(animate);
     }
   }
@@ -358,22 +368,17 @@
     let newTime = currentTime - 5;
     if (newTime < 0) newTime = 0;
     currentTime = newTime;
-
-    // Cancel any current animation frame.
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
     }
-
-    // If playback is active, re-sync the transport.
     if (isPlaying && !isPaused) {
       Tone.getTransport().pause();
       Tone.getTransport().start(undefined, newTime);
-      animationStartTime = performance.now() - newTime * 1000;
+      audioStartTime = Tone.getContext().now() - newTime;
       requestAnimationFrame(animate);
     } else {
-      // Just update the canvas if paused.
-      animationStartTime = performance.now() - newTime * 1000;
+      audioStartTime = Tone.getContext().now() - newTime;
       drawAll();
     }
   }
@@ -382,19 +387,17 @@
     let newTime = currentTime + 5;
     if (newTime > totalDuration) newTime = totalDuration;
     currentTime = newTime;
-
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
     }
-
     if (isPlaying && !isPaused) {
       Tone.getTransport().pause();
       Tone.getTransport().start(undefined, newTime);
-      animationStartTime = performance.now() - newTime * 1000;
+      audioStartTime = Tone.getContext().now() - newTime;
       requestAnimationFrame(animate);
     } else {
-      animationStartTime = performance.now() - newTime * 1000;
+      audioStartTime = Tone.getContext().now() - newTime;
       drawAll();
     }
   }
@@ -418,13 +421,12 @@
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
     if (val >= totalDuration) {
-      // If slider reaches the end, pause playback.
       Tone.getTransport().pause();
       isPlaying = false;
       isPaused = true;
       drawAll();
     } else {
-      animationStartTime = performance.now() - val * 1000;
+      audioStartTime = Tone.getContext().now() - val;
       Tone.getTransport().seconds = val;
       drawAll();
     }
@@ -434,7 +436,7 @@
       const val = currentTime;
       Tone.getTransport().start(undefined, val);
       isPaused = false;
-      animationStartTime = performance.now() - val * 1000;
+      audioStartTime = Tone.getContext().now() - val;
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
@@ -481,13 +483,10 @@
 
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-
-    // If another pointer is already active, ignore new ones.
     if (activePointerId !== null && e.pointerId !== activePointerId) {
       return;
     }
     activePointerId = e.pointerId;
-
     startX = e.clientX;
     startY = e.clientY;
     lastY = e.clientY;
@@ -508,26 +507,22 @@
   }
 
   function handleCanvasPointerMove(e: PointerEvent) {
-    // Only handle moves for the active pointer.
     if (e.pointerId !== activePointerId) return;
-
     if (startY === null) return;
     const deltaY = e.clientY - startY;
     if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
       isSwiping = true;
-      // Make sure swipeFactor is updated with current dimensions
       updateSwipeFactor();
     }
     if (isSwiping) {
       const yDiff = lastY !== null ? e.clientY - lastY : 0;
-      // Use the swipeFactor to calculate the time adjustment
       const timeAdjustment = yDiff * swipeFactor;
       currentTime = Math.max(
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
       Tone.getTransport().seconds = currentTime;
-      animationStartTime = performance.now() - currentTime * 1000;
+      audioStartTime = Tone.getContext().now() - currentTime;
       drawAll();
       lastY = e.clientY;
     }
@@ -535,10 +530,7 @@
 
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-
-    // Only handle the up event if it's from the active pointer.
     if (e.pointerId !== activePointerId) return;
-
     if (startY === null) return;
     const deltaY = Math.abs(e.clientY - startY);
     if (deltaY < swipeThreshold) {
@@ -547,7 +539,7 @@
       } else if (isPaused && !wasPlayingBeforeInteraction) {
         togglePauseResume();
       } else if (wasPlayingBeforeInteraction) {
-        // Leave it paused
+        // Keep paused
       } else {
         togglePauseResume();
       }
@@ -555,7 +547,7 @@
       if (wasPlayingBeforeInteraction) {
         Tone.getTransport().start(undefined, currentTime);
         isPaused = false;
-        animationStartTime = performance.now() - currentTime * 1000;
+        audioStartTime = Tone.getContext().now() - currentTime;
         requestAnimationFrame(animate);
       }
     }
@@ -627,7 +619,6 @@
               <IconPlayerResume />
             {/if}
           </Button>
-          <!-- New seek backward button -->
           <Button
             class="bg-purple-500 hover:bg-purple-600"
             size="icon-sm"
@@ -636,7 +627,6 @@
           >
             <IconPlayerSkipBack />
           </Button>
-          <!-- New seek forward button -->
           <Button
             class="bg-purple-500 hover:bg-purple-600"
             size="icon-sm"
