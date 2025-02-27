@@ -584,7 +584,9 @@
 
   onMount(() => {
     if (browser) {
-      Tone.setContext(new Tone.Context({ latencyHint: "interactive" }));
+      const ctx = new Tone.Context({ latencyHint: "interactive" });
+      ctx.lookAhead = 0; // Lower scheduling delay
+      Tone.setContext(ctx);
       Tone.immediate();
     }
   });
