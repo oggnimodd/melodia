@@ -10,7 +10,7 @@
   import IconPlayerSkipBack from "@tabler/icons-svelte/icons/player-skip-back-filled";
   import IconPlayerSkipForward from "@tabler/icons-svelte/icons/player-skip-forward-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
   import { cn } from "$lib/utils";
@@ -581,6 +581,13 @@
     }
     drawAll();
   }
+
+  onMount(() => {
+    if (browser) {
+      Tone.setContext(new Tone.Context({ latencyHint: "interactive" }));
+      Tone.immediate();
+    }
+  });
 </script>
 
 <div
