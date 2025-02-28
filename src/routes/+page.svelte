@@ -298,8 +298,6 @@
           "F#4": "Fs4.mp3",
           A4: "A4.mp3",
         },
-        attack: 0,
-        release: 0.6,
         baseUrl: "https://tonejs.github.io/audio/salamander/",
       }).toDestination();
     }
