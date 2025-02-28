@@ -20,10 +20,10 @@ export const CONFIG = {
   visibleSeconds: 3,
   whiteKeyColor: "#ffffff",
   blackKeyColor: "#000000",
-  activeWhiteKeyColor: "#ffcc00",
-  activeBlackKeyColor: "#ff9900",
+  activeWhiteKeyColor: "#2196F3",
+  activeBlackKeyColor: "#2196F3",
   inactiveNoteColor: "#2196F3",
-  activeNoteColor: "#4CAF50",
+  activeNoteColor: "#2196F3",
   fontColor: "#000000",
 };
 

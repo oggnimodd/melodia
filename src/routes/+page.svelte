@@ -10,6 +10,7 @@
   import IconPlayerSkipBack from "@tabler/icons-svelte/icons/player-skip-back-filled";
   import IconPlayerSkipForward from "@tabler/icons-svelte/icons/player-skip-forward-filled";
   import IconMaximize from "@tabler/icons-svelte/icons/maximize";
+  import IconSettings from "@tabler/icons-svelte/icons/settings";
   import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
@@ -23,21 +24,23 @@
     isBlackKey,
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
-  import type { Notes } from "$lib/models/midi";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
+  import { SvelteSet } from "svelte/reactivity";
+  import type { Notes } from "$lib/models/midi";
 
   // DOM and state refs
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx = $state<CanvasRenderingContext2D | null>(null);
+
   let midiFile = $state<File | null>(null);
   let midiData = $state<Awaited<ReturnType<typeof parseMidiFile>> | null>(null);
-  let allNotes = $state<Notes>([]);
+
+  let allNotes: Notes = $state([]);
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
   let isPaused = $state(false);
-
   let currentTime = $state(0);
   let animationFrameId = $state<number | null>(null);
   let minMidi = $state(24);
@@ -51,6 +54,10 @@
   let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
+
+  // Instead of scheduling active notes, we update them on every frame.
+  let activeNotes = new SvelteSet<number>();
+
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
   // For syncing with the audio clock
@@ -61,25 +68,18 @@
   let startX = $state<number | null>(null);
   let lastY = $state<number | null>(null);
   let isSwiping = $state(false);
-  let swipeThreshold = 15; // Pixels to consider as swipe vs click
+  let swipeThreshold = 15;
   let wasPlayingBeforeInteraction = $state(false);
   let initialTimeBeforeSwipe = $state(0);
   let activePointerId: number | null = $state(null);
-  let swipeFactor = $state(1); // Factor to adjust swipe sensitivity based on canvas height
+  let swipeFactor = $state(1);
 
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
-  function getActiveKeys(time: number): Set<number> {
-    const active = new Set<number>();
-    for (const note of allNotes) {
-      if (note.time > time) break;
-      if (time >= note.time && time <= note.time + note.duration) {
-        active.add(note.midi);
-      }
-    }
-    return active;
-  }
+  // --- Calibration variables ---
+  let audioVisualOffset = $state(-0.1); // default offset in seconds
+  let showCalibrationModal = $state(false);
 
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
@@ -92,37 +92,6 @@
       midiFile = input.files[0];
     }
   }
-
-  $effect(() => {
-    if (!midiFile) return;
-    (async () => {
-      const data = await parseMidiFile(midiFile);
-      midiData = data;
-      const newNotes: typeof allNotes = [];
-      data.tracks.forEach((track) => {
-        track.notes.forEach((note) => {
-          newNotes.push({
-            time: note.time,
-            duration: note.duration,
-            midi: note.midi,
-            name: note.name,
-          });
-        });
-      });
-      newNotes.sort((a, b) => a.time - b.time);
-      allNotes = newNotes;
-      if (allNotes.length > 0) {
-        let trackMin = Math.min(...allNotes.map((n) => n.midi));
-        let trackMax = Math.max(...allNotes.map((n) => n.midi));
-        minMidi = trackMin;
-        maxMidi = trackMax;
-        minOffset = getLayoutOffsetRaw(minMidi);
-        maxOffset = getLayoutOffsetRaw(maxMidi);
-      }
-      initCanvas();
-      drawAll();
-    })();
-  });
 
   function initCanvas() {
     if (!containerDiv || !canvas) return;
@@ -166,8 +135,6 @@
     }
     leftOffset = newLeftOffset;
     scale = finalWidth / totalWidthUnits;
-
-    // Update the swipeFactor based on the new canvas height
     updateSwipeFactor();
   }
 
@@ -182,7 +149,12 @@
     const c = ctx;
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
-    const active = getActiveKeys(currentTime);
+    const activeMidi = new Set<number>();
+    for (const note of allNotes) {
+      if (activeNotes.has(note.id)) {
+        activeMidi.add(note.midi);
+      }
+    }
     const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
@@ -193,7 +165,7 @@
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi, leftOffset, scale);
       const w = getKeyWidth(midi, scale);
-      const isActive = active.has(midi);
+      const isActive = activeMidi.has(midi);
       c.fillStyle = isActive
         ? CONFIG.activeWhiteKeyColor
         : CONFIG.whiteKeyColor;
@@ -206,7 +178,7 @@
       const x = getKeyX(midi, leftOffset, scale);
       const w = getKeyWidth(midi, scale);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
-      const isActive = active.has(midi);
+      const isActive = activeMidi.has(midi);
       c.fillStyle = isActive
         ? CONFIG.activeBlackKeyColor
         : CONFIG.blackKeyColor;
@@ -230,6 +202,7 @@
     }
   }
 
+  // Modified drawNotes: now falling tiles use audioVisualOffset so they intersect the keys correctly.
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -239,21 +212,21 @@
     const visibleStart = currentTime - CONFIG.visibleSeconds;
     const visibleEnd = currentTime + CONFIG.visibleSeconds;
     const startIdx = allNotes.findIndex(
-      (n) => n.time + n.duration >= visibleStart
+      (n) => n.time + audioVisualOffset + n.duration >= visibleStart
     );
     if (startIdx === -1) return;
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
-      if (note.time > visibleEnd) break;
-      const appearTime = note.time - CONFIG.visibleSeconds;
+      // Use the calibrated time for drawing the falling tile.
+      if (note.time + audioVisualOffset > visibleEnd) break;
+      const appearTime = note.time + audioVisualOffset - CONFIG.visibleSeconds;
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi, leftOffset, scale);
       const w = getKeyWidth(note.midi, scale) - 2;
-      const isActive =
-        currentTime >= note.time && currentTime <= note.time + note.duration;
+      const isActive = activeNotes.has(note.id);
       c.fillStyle = isActive
         ? CONFIG.activeNoteColor
         : CONFIG.inactiveNoteColor;
@@ -282,18 +255,28 @@
     });
   }
 
-  // Use AudioContext clock for animation timing with smoothing to reduce stutter.
+  // Update activeNotes based on calibrated timing.
+  function updateActiveNotes() {
+    activeNotes.clear();
+    for (const note of allNotes) {
+      const activationTime = note.time + audioVisualOffset;
+      const deactivationTime = note.time + note.duration + audioVisualOffset;
+      if (currentTime >= activationTime && currentTime <= deactivationTime) {
+        activeNotes.add(note.id);
+      }
+    }
+  }
+
   function animate() {
     if (!isPlaying || !ctx || !canvas) return;
-    // Calculate the elapsed time using Tone's AudioContext
     const newTime = Tone.getContext().now() - audioStartTime;
-    // Smooth out changes using a simple interpolation
     const smoothingFactor = 0.1;
     currentTime += (newTime - currentTime) * smoothingFactor;
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
     }
+    updateActiveNotes();
     drawAll();
     animationFrameId = requestAnimationFrame(animate);
   }
@@ -324,14 +307,13 @@
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-    untrack(() => {
-      for (const n of allNotes) {
-        transport.schedule((time) => {
-          pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
-        }, n.time);
-      }
-    });
-    // Record the audio clock's start time
+
+    // Schedule only the audio events.
+    for (const n of allNotes) {
+      transport.schedule((time) => {
+        pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
+      }, n.time);
+    }
     audioStartTime = Tone.getContext().now();
     transport.start();
     requestAnimationFrame(animate);
@@ -349,7 +331,6 @@
     } else {
       Tone.getTransport().start(undefined, currentTime);
       isPaused = false;
-      // Reset the audioStartTime to maintain sync
       audioStartTime = Tone.getContext().now() - currentTime;
       requestAnimationFrame(animate);
     }
@@ -363,7 +344,6 @@
     }
   }
 
-  // --- SEEK HANDLERS ---
   function seekBackward() {
     let newTime = currentTime - 5;
     if (newTime < 0) newTime = 0;
@@ -402,9 +382,9 @@
     }
   }
 
-  // --- SLIDER HANDLERS ---
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
+
   function handleSliderMouseDown(e: MouseEvent) {
     if (isPlaying && !isPaused) {
       wasPlayingBeforeSlide = true;
@@ -417,6 +397,7 @@
     }
     isSliding = true;
   }
+
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
@@ -431,6 +412,7 @@
       drawAll();
     }
   }
+
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -445,11 +427,40 @@
 
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
+
   $effect(() => {
-    if (!containerDiv) return;
-    initCanvas();
-    drawAll();
+    if (!midiFile) return;
+    (async () => {
+      const data = await parseMidiFile(midiFile);
+      midiData = data;
+      let noteIdCounter = 0;
+      const newNotes: Notes = [];
+      data.tracks.forEach((track) => {
+        track.notes.forEach((note) => {
+          newNotes.push({
+            id: noteIdCounter++,
+            time: note.time,
+            duration: note.duration,
+            midi: note.midi,
+            name: note.name,
+          });
+        });
+      });
+      newNotes.sort((a, b) => a.time - b.time);
+      allNotes = newNotes;
+      if (allNotes.length > 0) {
+        let trackMin = Math.min(...allNotes.map((n) => n.midi));
+        let trackMax = Math.max(...allNotes.map((n) => n.midi));
+        minMidi = trackMin;
+        maxMidi = trackMax;
+        minOffset = getLayoutOffsetRaw(minMidi);
+        maxOffset = getLayoutOffsetRaw(maxMidi);
+      }
+      initCanvas();
+      drawAll();
+    })();
   });
+
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -467,6 +478,7 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -477,15 +489,9 @@
     isPlaying = false;
   });
 
-  let pianoTopY = $derived(
-    canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio
-  );
-
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
-    if (activePointerId !== null && e.pointerId !== activePointerId) {
-      return;
-    }
+    if (activePointerId !== null && e.pointerId !== activePointerId) return;
     activePointerId = e.pointerId;
     startX = e.clientX;
     startY = e.clientY;
@@ -539,7 +545,7 @@
       } else if (isPaused && !wasPlayingBeforeInteraction) {
         togglePauseResume();
       } else if (wasPlayingBeforeInteraction) {
-        // Keep paused
+        // Keep paused.
       } else {
         togglePauseResume();
       }
@@ -584,8 +590,10 @@
 
   onMount(() => {
     if (browser) {
-      const ctx = new Tone.Context({ latencyHint: "interactive" });
-      ctx.lookAhead = 0; // Lower scheduling delay
+      const ctx = new Tone.Context({
+        latencyHint: "interactive",
+        lookAhead: 0,
+      });
       Tone.setContext(ctx);
       Tone.immediate();
     }
@@ -651,6 +659,13 @@
           >
             <IconMaximize />
           </Button>
+          <Button
+            class="bg-orange-500 hover:bg-orange-600"
+            size="icon-sm"
+            onclick={() => (showCalibrationModal = true)}
+          >
+            <IconSettings />
+          </Button>
         </div>
       {/if}
       <div class="mt-4 flex w-full items-center gap-4 text-white">
@@ -682,3 +697,47 @@
     ></canvas>
   </div>
 </div>
+
+{#if showCalibrationModal}
+  <!-- Modal overlay for calibration -->
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+  >
+    <div class="w-80 rounded-lg bg-gray-800 p-6">
+      <h2 class="mb-4 text-xl font-semibold text-white">Calibrate A/V Sync</h2>
+      <p class="mb-4 text-sm text-gray-300">
+        Adjust the slider until the visual tiles match the piano keys being
+        pressed.
+        <strong>
+          If the visuals are too fast (you hear the audio before you see the
+          keys pressed), slide right to delay them; if they're too slow, slide
+          left.
+        </strong>
+      </p>
+      <div class="mb-2 flex items-center gap-2">
+        <span class="text-sm text-white"
+          >Offset: {audioVisualOffset.toFixed(2)}s</span
+        >
+      </div>
+      <Slider
+        value={audioVisualOffset}
+        min={-0.5}
+        max={0.5}
+        step={0.01}
+        oninput={(e) => {
+          audioVisualOffset = parseFloat((e.target as HTMLInputElement).value);
+        }}
+      />
+      <div class="mt-4 flex justify-end gap-2">
+        <!-- Reset button -->
+        <Button size="sm" onclick={() => (audioVisualOffset = -0.1)}
+          >Reset</Button
+        >
+
+        <Button size="sm" onclick={() => (showCalibrationModal = false)}
+          >Close</Button
+        >
+      </div>
+    </div>
+  </div>
+{/if}
