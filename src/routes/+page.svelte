@@ -23,6 +23,7 @@
     getKeyWidth,
     isBlackKey,
     getTrackColor,
+    createSalamanderPiano,
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
@@ -290,16 +291,7 @@
     lastTransportTime = 0;
     await Tone.start();
     if (!pianoSampler) {
-      pianoSampler = new Tone.Sampler({
-        urls: {
-          C4: "C4.mp3",
-          "D#4": "Ds4.mp3",
-          "F#4": "Fs4.mp3",
-          A4: "A4.mp3",
-        },
-        release: 1,
-        baseUrl: "https://tonejs.github.io/audio/salamander/",
-      }).toDestination();
+      pianoSampler = createSalamanderPiano();
     }
     await Tone.loaded();
     const transport = Tone.getTransport();
