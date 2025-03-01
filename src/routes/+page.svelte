@@ -170,9 +170,9 @@
       const fillColor =
         track !== undefined ? getTrackColor(track, true) : CONFIG.whiteKeyColor;
       c.fillStyle = fillColor;
-      c.fillRect(x, startY, w - 1, pianoHeight);
+      c.fillRect(x, startY, w, pianoHeight);
       c.strokeStyle = "#000";
-      c.strokeRect(x, startY, w - 1, pianoHeight);
+      c.strokeRect(x, startY, w, pianoHeight);
     }
     // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
@@ -226,7 +226,7 @@
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi, leftOffset, scale);
-      const w = getKeyWidth(note.midi, scale) - 2;
+      const w = getKeyWidth(note.midi, scale);
       // Use track-specific active color for falling notes regardless of activation state.
       c.fillStyle = getTrackColor(note.track, true);
       c.fillRect(x, topY, w, noteHeight);
