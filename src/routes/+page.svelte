@@ -98,6 +98,7 @@
     const containerWidth = containerDiv.offsetWidth;
     let finalWidth = containerWidth;
     let finalHeight = 0;
+
     if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
@@ -105,6 +106,7 @@
     } else {
       finalHeight = window.innerHeight * 0.7;
     }
+
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -112,28 +114,62 @@
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
+
     const context = canvas.getContext("2d");
     if (!context) return;
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
+
     if (!allNotes.length) return;
-    const currentWidthUnits = maxOffset - minOffset + 1;
-    const minKeys = 31;
-    let totalWidthUnits: number;
-    let newLeftOffset: number;
-    if (currentWidthUnits < minKeys) {
-      const extra = minKeys - currentWidthUnits;
-      const leftExtra = Math.floor(extra / 2);
-      newLeftOffset = minOffset - leftExtra;
-      totalWidthUnits = minKeys;
-    } else {
-      newLeftOffset = minOffset;
-      totalWidthUnits = currentWidthUnits;
-    }
-    leftOffset = newLeftOffset;
-    scale = finalWidth / totalWidthUnits;
+
+    // Calculate number of white keys required to fill the canvas width
+    // A standard approach is to calculate how many white keys can fit
+    const minKeysToDisplay = 7; // Minimum one octave
+    const whiteKeysPerOctave = 7;
+
+    // Calculate required range based on MIDI notes
+    const requiredRange = maxMidi - minMidi;
+
+    // Calculate how many white keys will fill the screen
+    // We'll use the screen width divided by a reasonable key width to get the number of keys
+    const reasonableKeyWidth = finalWidth / 52; // Approximately a standard 88-key piano
+
+    // Calculate how many white keys to show based on width
+    let totalWhiteKeys = Math.ceil(finalWidth / reasonableKeyWidth);
+
+    // Ensure we show at least the minimum keys
+    totalWhiteKeys = Math.max(totalWhiteKeys, minKeysToDisplay);
+
+    // Ensure we show at least the range required by the MIDI
+    totalWhiteKeys = Math.max(totalWhiteKeys, requiredRange);
+
+    // Round up to complete octaves for better appearance
+    totalWhiteKeys =
+      Math.ceil(totalWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
+
+    // Calculate new min and max MIDI values to ensure we capture all notes plus fill the screen
+    const midiRangeNeeded = Math.ceil((totalWhiteKeys * 12) / 7); // Convert white keys to total keys
+
+    // Center the required MIDI range and expand outward
+    const centerMidi = (minMidi + maxMidi) / 2;
+    const halfRange = midiRangeNeeded / 2;
+    const newMinMidi = Math.floor(centerMidi - halfRange);
+    const newMaxMidi = Math.ceil(centerMidi + halfRange);
+
+    // Ensure new range includes original range
+    const finalMinMidi = Math.min(minMidi, newMinMidi);
+    const finalMaxMidi = Math.max(maxMidi, newMaxMidi);
+
+    // Calculate offsets for the layout
+    minOffset = getLayoutOffsetRaw(finalMinMidi);
+    maxOffset = getLayoutOffsetRaw(finalMaxMidi);
+    leftOffset = minOffset;
+
+    // Calculate scale factor to fit the keys to the canvas
+    scale = finalWidth / (maxOffset - minOffset);
+
     updateSwipeFactor();
   }
 
