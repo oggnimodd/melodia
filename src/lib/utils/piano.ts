@@ -23,7 +23,7 @@ export const CONFIG = {
   whiteKeyColor: "#ffffff",
   blackKeyColor: "#000000",
   activeWhiteKeyColor: "#2196F3",
-  activeBlackKeyColor: "#2196F3",
+  activeBlackKeyColor: "#2196F3", // will be darkened for black keys
   inactiveNoteColor: "#2196F3",
   activeNoteColor: "#2196F3",
   fontColor: "#000000",
@@ -73,8 +73,8 @@ export function isBlackKey(midi: number) {
 
 export interface TrackColor {
   active: string;
-  // Optionally you can add an inactive color here
   inactive?: string;
+  activeBlack?: string;
 }
 
 export const TRACK_COLORS: TrackColor[] = [
@@ -88,10 +88,93 @@ export const TRACK_COLORS: TrackColor[] = [
   { active: "#8BC34A" },
 ];
 
-export function getTrackColor(track: number, active: boolean = true): string {
+// Convert a hex color to a less saturated version.
+export function desaturateColor(hex: string, fraction: number): string {
+  // Remove the '#' if present.
+  let trimmed = hex.startsWith("#") ? hex.slice(1) : hex;
+  // Expand shorthand (e.g. "abc" becomes "aabbcc")
+  if (trimmed.length === 3) {
+    trimmed = trimmed
+      .split("")
+      .map((c) => c + c)
+      .join("");
+  }
+  const r = parseInt(trimmed.substring(0, 2), 16);
+  const g = parseInt(trimmed.substring(2, 4), 16);
+  const b = parseInt(trimmed.substring(4, 6), 16);
+
+  // Convert RGB to HSL.
+  const rNorm = r / 255;
+  const gNorm = g / 255;
+  const bNorm = b / 255;
+  const max = Math.max(rNorm, gNorm, bNorm);
+  const min = Math.min(rNorm, gNorm, bNorm);
+  let h = 0,
+    s = 0;
+  const l = (max + min) / 2;
+
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === rNorm) {
+      h = (gNorm - bNorm) / d + (gNorm < bNorm ? 6 : 0);
+    } else if (max === gNorm) {
+      h = (bNorm - rNorm) / d + 2;
+    } else {
+      h = (rNorm - gNorm) / d + 4;
+    }
+    h /= 6;
+  }
+
+  // Reduce saturation by the given fraction.
+  s = s * (1 - fraction);
+
+  // Convert HSL back to RGB.
+  function hue2rgb(p: number, q: number, t: number): number {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  }
+
+  let rNew: number, gNew: number, bNew: number;
+  if (s === 0) {
+    rNew = gNew = bNew = l;
+  } else {
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    rNew = hue2rgb(p, q, h + 1 / 3);
+    gNew = hue2rgb(p, q, h);
+    bNew = hue2rgb(p, q, h - 1 / 3);
+  }
+
+  const toHex = (val: number) =>
+    Math.round(val * 255)
+      .toString(16)
+      .padStart(2, "0");
+  return "#" + toHex(rNew) + toHex(gNew) + toHex(bNew);
+}
+
+// Precompute the desaturated color for black keys on startup.
+TRACK_COLORS.forEach((track) => {
+  track.activeBlack = desaturateColor(track.active, 0.3);
+});
+
+// Adjusted getTrackColor using the precomputed activeBlack value.
+export function getTrackColor(
+  track: number,
+  active: boolean = true,
+  isBlack: boolean = false
+): string {
   const index = track % TRACK_COLORS.length;
-  // For now we return the active color regardless
-  return TRACK_COLORS[index].active;
+  const color = TRACK_COLORS[index];
+  if (active) {
+    return isBlack ? color.activeBlack! : color.active;
+  } else {
+    return isBlack ? CONFIG.blackKeyColor : CONFIG.whiteKeyColor;
+  }
 }
 
 export function createSalamanderPiano() {

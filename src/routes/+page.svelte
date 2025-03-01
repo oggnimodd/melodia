@@ -58,10 +58,8 @@
   // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
   let totalDuration = $derived(midiData?.totalDuration || 0);
-
   // For syncing with the audio clock
   let audioStartTime = 0;
-
   // Swipe detection
   let startY = $state<number | null>(null);
   let startX = $state<number | null>(null);
@@ -98,7 +96,6 @@
     const containerWidth = containerDiv.offsetWidth;
     let finalWidth = containerWidth;
     let finalHeight = 0;
-
     if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       const availableHeight = containerHeight - controlsHeight;
@@ -106,7 +103,6 @@
     } else {
       finalHeight = window.innerHeight * 0.7;
     }
-
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -114,62 +110,35 @@
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
-
     const context = canvas.getContext("2d");
     if (!context) return;
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
-
     if (!allNotes.length) return;
 
     // Calculate number of white keys required to fill the canvas width
-    // A standard approach is to calculate how many white keys can fit
     const minKeysToDisplay = 7; // Minimum one octave
     const whiteKeysPerOctave = 7;
-
-    // Calculate required range based on MIDI notes
     const requiredRange = maxMidi - minMidi;
-
-    // Calculate how many white keys will fill the screen
-    // We'll use the screen width divided by a reasonable key width to get the number of keys
-    const reasonableKeyWidth = finalWidth / 40; // Approximately a standard 88-key piano
-
-    // Calculate how many white keys to show based on width
+    const reasonableKeyWidth = finalWidth / 40;
     let totalWhiteKeys = Math.ceil(finalWidth / reasonableKeyWidth);
-
-    // Ensure we show at least the minimum keys
     totalWhiteKeys = Math.max(totalWhiteKeys, minKeysToDisplay);
-
-    // Ensure we show at least the range required by the MIDI
     totalWhiteKeys = Math.max(totalWhiteKeys, requiredRange);
-
-    // Round up to complete octaves for better appearance
     totalWhiteKeys =
       Math.ceil(totalWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
-
-    // Calculate new min and max MIDI values to ensure we capture all notes plus fill the screen
-    const midiRangeNeeded = Math.ceil((totalWhiteKeys * 12) / 7); // Convert white keys to total keys
-
-    // Center the required MIDI range and expand outward
+    const midiRangeNeeded = Math.ceil((totalWhiteKeys * 12) / 7);
     const centerMidi = (minMidi + maxMidi) / 2;
     const halfRange = midiRangeNeeded / 2;
     const newMinMidi = Math.floor(centerMidi - halfRange);
     const newMaxMidi = Math.ceil(centerMidi + halfRange);
-
-    // Ensure new range includes original range
     const finalMinMidi = Math.min(minMidi, newMinMidi);
     const finalMaxMidi = Math.max(maxMidi, newMaxMidi);
-
-    // Calculate offsets for the layout
     minOffset = getLayoutOffsetRaw(finalMinMidi);
     maxOffset = getLayoutOffsetRaw(finalMaxMidi);
     leftOffset = minOffset;
-
-    // Calculate scale factor to fit the keys to the canvas
     scale = finalWidth / (maxOffset - minOffset);
-
     updateSwipeFactor();
   }
 
@@ -188,7 +157,6 @@
     const activeMidiTracks = new Map<number, number>();
     for (const note of allNotes) {
       if (activeNotes.has(note.id)) {
-        // If multiple active notes share a key, the last one wins (or you can choose differently)
         activeMidiTracks.set(note.midi, note.track);
       }
     }
@@ -205,7 +173,9 @@
       const w = getKeyWidth(midi, scale);
       const track = activeMidiTracks.get(midi);
       const fillColor =
-        track !== undefined ? getTrackColor(track, true) : CONFIG.whiteKeyColor;
+        track !== undefined
+          ? getTrackColor(track, true, false)
+          : CONFIG.whiteKeyColor;
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, pianoHeight);
       c.strokeStyle = "#000";
@@ -219,7 +189,9 @@
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const track = activeMidiTracks.get(midi);
       const fillColor =
-        track !== undefined ? getTrackColor(track, true) : CONFIG.blackKeyColor;
+        track !== undefined
+          ? getTrackColor(track, true, true)
+          : CONFIG.blackKeyColor;
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
@@ -254,10 +226,7 @@
       (n) => n.time + audioVisualOffset + n.duration >= visibleStart
     );
     if (startIdx === -1) return;
-
-    // Calculate radius as a percentage of key width
-    const noteRadiusPercent = 0.1; // 10% of note width
-
+    const noteRadiusPercent = 0.1;
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
       if (note.time + audioVisualOffset > visibleEnd) break;
@@ -268,17 +237,12 @@
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi, leftOffset, scale);
       const w = getKeyWidth(note.midi, scale);
-
-      // Calculate actual radius in pixels (capped to ensure it's not too large)
       const noteRadius = Math.min(
         w * noteRadiusPercent,
         Math.min(w / 2, noteHeight / 2)
       );
-
-      // Use track-specific active color for falling notes regardless of activation state.
-      c.fillStyle = getTrackColor(note.track, true);
-
-      // Draw rounded rectangle for notes
+      // Pass isBlackKey(note.midi) to adjust active note color based on key type.
+      c.fillStyle = getTrackColor(note.track, true, isBlackKey(note.midi));
       c.beginPath();
       c.moveTo(x + noteRadius, topY);
       c.lineTo(x + w - noteRadius, topY);
@@ -290,7 +254,6 @@
       c.lineTo(x, topY + noteRadius);
       c.arcTo(x, topY, x + noteRadius, topY, noteRadius);
       c.fill();
-
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
         c.font = "bold 12px sans-serif";
@@ -304,6 +267,7 @@
       }
     }
   }
+
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
@@ -314,7 +278,6 @@
     });
   }
 
-  // Update activeNotes based on calibrated timing.
   function updateActiveNotes() {
     activeNotes.clear();
     for (const note of allNotes) {
@@ -356,7 +319,6 @@
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-    // Schedule only the audio events.
     for (const n of allNotes) {
       transport.schedule((time) => {
         pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
@@ -432,7 +394,6 @@
 
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
-
   function handleSliderMouseDown(e: MouseEvent) {
     if (isPlaying && !isPaused) {
       wasPlayingBeforeSlide = true;
@@ -445,7 +406,6 @@
     }
     isSliding = true;
   }
-
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
@@ -460,7 +420,6 @@
       drawAll();
     }
   }
-
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -472,10 +431,8 @@
     }
     isSliding = false;
   }
-
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
-
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -509,7 +466,6 @@
       drawAll();
     })();
   });
-
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -527,7 +483,6 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
-
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -560,7 +515,6 @@
       canvas.setPointerCapture(e.pointerId);
     }
   }
-
   function handleCanvasPointerMove(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return;
     if (startY === null) return;
@@ -582,7 +536,6 @@
       lastY = e.clientY;
     }
   }
-
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerId !== activePointerId) return;
@@ -612,7 +565,6 @@
     isSwiping = false;
     activePointerId = null;
   }
-
   function pauseAtEnd() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -624,7 +576,6 @@
       animationFrameId = null;
     }
   }
-
   function haltPlayback() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -636,7 +587,6 @@
     }
     drawAll();
   }
-
   onMount(() => {
     if (browser) {
       const ctx = new Tone.Context({
