@@ -218,6 +218,10 @@
       (n) => n.time + audioVisualOffset + n.duration >= visibleStart
     );
     if (startIdx === -1) return;
+
+    // Calculate radius as a percentage of key width
+    const noteRadiusPercent = 0.1; // 10% of note width
+
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
       if (note.time + audioVisualOffset > visibleEnd) break;
@@ -228,9 +232,29 @@
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi, leftOffset, scale);
       const w = getKeyWidth(note.midi, scale);
+
+      // Calculate actual radius in pixels (capped to ensure it's not too large)
+      const noteRadius = Math.min(
+        w * noteRadiusPercent,
+        Math.min(w / 2, noteHeight / 2)
+      );
+
       // Use track-specific active color for falling notes regardless of activation state.
       c.fillStyle = getTrackColor(note.track, true);
-      c.fillRect(x, topY, w, noteHeight);
+
+      // Draw rounded rectangle for notes
+      c.beginPath();
+      c.moveTo(x + noteRadius, topY);
+      c.lineTo(x + w - noteRadius, topY);
+      c.arcTo(x + w, topY, x + w, topY + noteRadius, noteRadius);
+      c.lineTo(x + w, bottomY - noteRadius);
+      c.arcTo(x + w, bottomY, x + w - noteRadius, bottomY, noteRadius);
+      c.lineTo(x + noteRadius, bottomY);
+      c.arcTo(x, bottomY, x, bottomY - noteRadius, noteRadius);
+      c.lineTo(x, topY + noteRadius);
+      c.arcTo(x, topY, x + noteRadius, topY, noteRadius);
+      c.fill();
+
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
         c.font = "bold 12px sans-serif";
@@ -244,7 +268,6 @@
       }
     }
   }
-
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
