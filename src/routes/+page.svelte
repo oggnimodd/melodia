@@ -134,7 +134,7 @@
 
     // Calculate how many white keys will fill the screen
     // We'll use the screen width divided by a reasonable key width to get the number of keys
-    const reasonableKeyWidth = finalWidth / 52; // Approximately a standard 88-key piano
+    const reasonableKeyWidth = finalWidth / 40; // Approximately a standard 88-key piano
 
     // Calculate how many white keys to show based on width
     let totalWhiteKeys = Math.ceil(finalWidth / reasonableKeyWidth);
