@@ -27,6 +27,7 @@ export const CONFIG = {
   fontColor: "#000000",
 };
 
+// Returns the note name without octave information.
 export function midiToNoteNameNoOctave(midi: number) {
   const names = [
     "C",
@@ -66,4 +67,27 @@ export function getKeyWidth(midi: number, scale: number) {
 
 export function isBlackKey(midi: number) {
   return getOctaveLayout(midi).isBlack;
+}
+
+export interface TrackColor {
+  active: string;
+  // Optionally you can add an inactive color here
+  inactive?: string;
+}
+
+export const TRACK_COLORS: TrackColor[] = [
+  { active: "#4CAF50" },
+  { active: "#2196F3" },
+  { active: "#FFC107" },
+  { active: "#E91E63" },
+  { active: "#9C27B0" },
+  { active: "#FF5722" },
+  { active: "#00BCD4" },
+  { active: "#8BC34A" },
+];
+
+export function getTrackColor(track: number, active: boolean = true): string {
+  const index = track % TRACK_COLORS.length;
+  // For now we return the active color regardless
+  return TRACK_COLORS[index].active;
 }

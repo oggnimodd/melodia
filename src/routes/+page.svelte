@@ -22,6 +22,7 @@
     getKeyX,
     getKeyWidth,
     isBlackKey,
+    getTrackColor,
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
@@ -33,10 +34,8 @@
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
   let ctx = $state<CanvasRenderingContext2D | null>(null);
-
   let midiFile = $state<File | null>(null);
   let midiData = $state<Awaited<ReturnType<typeof parseMidiFile>> | null>(null);
-
   let allNotes: Notes = $state([]);
   let pianoSampler = $state<Tone.Sampler | null>(null);
   let isPlaying = $state(false);
@@ -57,7 +56,6 @@
 
   // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
-
   let totalDuration = $derived(midiData?.totalDuration || 0);
 
   // For syncing with the audio clock
@@ -149,10 +147,12 @@
     const c = ctx;
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
-    const activeMidi = new Set<number>();
+    // Build a map from midi note to the active note’s track
+    const activeMidiTracks = new Map<number, number>();
     for (const note of allNotes) {
       if (activeNotes.has(note.id)) {
-        activeMidi.add(note.midi);
+        // If multiple active notes share a key, the last one wins (or you can choose differently)
+        activeMidiTracks.set(note.midi, note.track);
       }
     }
     const totalWidthUnits = canvasCssWidth / scale;
@@ -161,29 +161,32 @@
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
+    // Draw white keys first
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const x = getKeyX(midi, leftOffset, scale);
       const w = getKeyWidth(midi, scale);
-      const isActive = activeMidi.has(midi);
-      c.fillStyle = isActive
-        ? CONFIG.activeWhiteKeyColor
-        : CONFIG.whiteKeyColor;
+      const track = activeMidiTracks.get(midi);
+      const fillColor =
+        track !== undefined ? getTrackColor(track, true) : CONFIG.whiteKeyColor;
+      c.fillStyle = fillColor;
       c.fillRect(x, startY, w - 1, pianoHeight);
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w - 1, pianoHeight);
     }
+    // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const x = getKeyX(midi, leftOffset, scale);
       const w = getKeyWidth(midi, scale);
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
-      const isActive = activeMidi.has(midi);
-      c.fillStyle = isActive
-        ? CONFIG.activeBlackKeyColor
-        : CONFIG.blackKeyColor;
+      const track = activeMidiTracks.get(midi);
+      const fillColor =
+        track !== undefined ? getTrackColor(track, true) : CONFIG.blackKeyColor;
+      c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
+    // Optionally add note names on white keys
     c.fillStyle = CONFIG.fontColor;
     const keyFontSize = pianoHeight * 0.15;
     c.font = "500 " + keyFontSize + "px sans-serif";
@@ -202,7 +205,6 @@
     }
   }
 
-  // Modified drawNotes: now falling tiles use audioVisualOffset so they intersect the keys correctly.
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -217,7 +219,6 @@
     if (startIdx === -1) return;
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
-      // Use the calibrated time for drawing the falling tile.
       if (note.time + audioVisualOffset > visibleEnd) break;
       const appearTime = note.time + audioVisualOffset - CONFIG.visibleSeconds;
       const timeSinceAppear = currentTime - appearTime;
@@ -226,10 +227,8 @@
       const topY = bottomY - noteHeight;
       const x = getKeyX(note.midi, leftOffset, scale);
       const w = getKeyWidth(note.midi, scale) - 2;
-      const isActive = activeNotes.has(note.id);
-      c.fillStyle = isActive
-        ? CONFIG.activeNoteColor
-        : CONFIG.inactiveNoteColor;
+      // Use track-specific active color for falling notes regardless of activation state.
+      c.fillStyle = getTrackColor(note.track, true);
       c.fillRect(x, topY, w, noteHeight);
       if (noteHeight > 15) {
         c.fillStyle = "#fff";
@@ -306,7 +305,6 @@
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-
     // Schedule only the audio events.
     for (const n of allNotes) {
       transport.schedule((time) => {
@@ -434,7 +432,7 @@
       midiData = data;
       let noteIdCounter = 0;
       const newNotes: Notes = [];
-      data.tracks.forEach((track) => {
+      data.tracks.forEach((track, trackIndex) => {
         track.notes.forEach((note) => {
           newNotes.push({
             id: noteIdCounter++,
@@ -442,6 +440,7 @@
             duration: note.duration,
             midi: note.midi,
             name: note.name,
+            track: trackIndex,
           });
         });
       });
@@ -732,7 +731,6 @@
         <Button size="sm" onclick={() => (audioVisualOffset = -0.1)}
           >Reset</Button
         >
-
         <Button size="sm" onclick={() => (showCalibrationModal = false)}
           >Close</Button
         >

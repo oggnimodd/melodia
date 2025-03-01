@@ -4,6 +4,7 @@ interface Note {
   midi: number;
   name: string;
   id: number;
+  track: number;
   hasLogged?: boolean;
 }
 
