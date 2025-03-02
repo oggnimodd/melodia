@@ -30,7 +30,6 @@
   import { SvelteSet } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
 
-  // DOM and state refs
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -54,6 +53,10 @@
   let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
+
+  // FPS counter states
+  let fps = $state(0);
+  let lastFrameTimestamp = $state<number | null>(null);
 
   // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
@@ -291,6 +294,14 @@
 
   function animate() {
     if (!isPlaying || !ctx || !canvas) return;
+    // FPS calculation
+    const now = performance.now();
+    if (lastFrameTimestamp !== null) {
+      const delta = now - lastFrameTimestamp;
+      fps = 1000 / delta;
+    }
+    lastFrameTimestamp = now;
+
     const newTime = Tone.getContext().now() - audioStartTime;
     const smoothingFactor = 0.1;
     currentTime += (newTime - currentTime) * smoothingFactor;
@@ -739,3 +750,10 @@
     </div>
   </div>
 {/if}
+
+<!-- FPS Counter -->
+<div
+  class="fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
+>
+  FPS: {fps.toFixed(1)}
+</div>
