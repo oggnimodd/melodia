@@ -49,7 +49,8 @@ export function midiToNoteNameNoOctave(midi: number) {
 }
 
 export function getOctaveLayout(midi: number) {
-  return octaveLayout[midi % 12];
+  const index = ((midi % 12) + 12) % 12;
+  return octaveLayout[index];
 }
 
 export function getLayoutOffsetRaw(midi: number) {

@@ -27,7 +27,7 @@
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
-  import { SvelteSet } from "svelte/reactivity";
+  import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
@@ -53,13 +53,29 @@
   let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
-
   // FPS counter states
   let fps = $state(0);
   let lastFrameTimestamp = $state<number | null>(null);
 
   // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
+
+  // Use reactive SvelteMap for caching key positions/widths.
+  let keyCache = new SvelteMap<number, { x: number; w: number }>();
+  function updateKeyCache() {
+    keyCache.clear();
+    // Cache for all possible midi values (0-127)
+    for (let midi = 0; midi < 128; midi++) {
+      keyCache.set(midi, {
+        x: getKeyX(midi, leftOffset, scale),
+        w: getKeyWidth(midi, scale),
+      });
+    }
+  }
+
+  // Reactive map for active midi tracks computed from active notes.
+  let cachedActiveMidiTracks = new SvelteMap<number, number>();
+
   let totalDuration = $derived(midiData?.totalDuration || 0);
   // For syncing with the audio clock
   let audioStartTime = 0;
@@ -73,7 +89,6 @@
   let initialTimeBeforeSwipe = $state(0);
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1);
-
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
@@ -87,6 +102,11 @@
       if (isPlaying) {
         haltPlayback();
       }
+
+      // Clear previous active keys cache
+      activeNotes.clear();
+      cachedActiveMidiTracks.clear();
+
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
@@ -95,17 +115,22 @@
 
   function initCanvas() {
     if (!containerDiv || !canvas) return;
+
+    // Get container dimensions
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
     let finalWidth = containerWidth;
     let finalHeight = 0;
+
     if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
-      const availableHeight = containerHeight - controlsHeight;
-      finalHeight = availableHeight > 0 ? availableHeight : containerHeight;
+      finalHeight = containerHeight - controlsHeight;
+      if (finalHeight < 0) finalHeight = containerHeight;
     } else {
       finalHeight = window.innerHeight * 0.7;
     }
+
+    // Setup canvas with devicePixelRatio
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -113,36 +138,55 @@
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
+
     const context = canvas.getContext("2d");
     if (!context) return;
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
+
     if (!allNotes.length) return;
 
-    // Calculate number of white keys required to fill the canvas width
-    const minKeysToDisplay = 7; // Minimum one octave
-    const whiteKeysPerOctave = 7;
-    const requiredRange = maxMidi - minMidi;
-    const reasonableKeyWidth = finalWidth / 40;
-    let totalWhiteKeys = Math.ceil(finalWidth / reasonableKeyWidth);
-    totalWhiteKeys = Math.max(totalWhiteKeys, minKeysToDisplay);
-    totalWhiteKeys = Math.max(totalWhiteKeys, requiredRange);
-    totalWhiteKeys =
-      Math.ceil(totalWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
-    const midiRangeNeeded = Math.ceil((totalWhiteKeys * 12) / 7);
-    const centerMidi = (minMidi + maxMidi) / 2;
-    const halfRange = midiRangeNeeded / 2;
-    const newMinMidi = Math.floor(centerMidi - halfRange);
-    const newMaxMidi = Math.ceil(centerMidi + halfRange);
-    const finalMinMidi = Math.min(minMidi, newMinMidi);
-    const finalMaxMidi = Math.max(maxMidi, newMaxMidi);
-    minOffset = getLayoutOffsetRaw(finalMinMidi);
-    maxOffset = getLayoutOffsetRaw(finalMaxMidi);
+    // --- Calculate rendered range using octaves ---
+    const actualMin = minMidi;
+    const actualMax = maxMidi;
+    const center = (actualMin + actualMax) / 2;
+
+    // Compute how many octaves your notes span. One octave = 12 semitones.
+    const actualOctaves = Math.ceil((actualMax - actualMin + 1) / 12);
+    // Enforce a minimum of 6 octaves.
+    const renderedOctaves = Math.max(actualOctaves, 6);
+    const renderedSemitones = renderedOctaves * 12;
+
+    // Center the rendered range around the note center and snap to a C (multiple of 12)
+    let newMinMidi = Math.floor((center - renderedSemitones / 2) / 12) * 12;
+    let newMaxMidi = newMinMidi + renderedSemitones - 1;
+
+    // Ensure the rendered range fully covers your actual notes.
+    if (newMinMidi > actualMin) {
+      newMinMidi = Math.floor(actualMin / 12) * 12;
+      newMaxMidi = newMinMidi + renderedSemitones - 1;
+    }
+    if (newMaxMidi < actualMax) {
+      newMaxMidi = Math.ceil((actualMax + 1) / 12) * 12 - 1;
+      newMinMidi = newMaxMidi - renderedSemitones + 1;
+    }
+
+    // After your final checks to ensure you cover actualMin..actualMax:
+    const extraWhiteKeys = 3;
+    // Convert white keys to semitones (7 white keys per 12 semitones):
+    const extraSemitones = Math.ceil((extraWhiteKeys * 12) / 7);
+    newMaxMidi += extraSemitones;
+
+    // Compute layout offsets and scale to fill the canvas exactly.
+    minOffset = getLayoutOffsetRaw(newMinMidi);
+    maxOffset = getLayoutOffsetRaw(newMaxMidi);
     leftOffset = minOffset;
     scale = finalWidth / (maxOffset - minOffset);
+
     updateSwipeFactor();
+    updateKeyCache();
   }
 
   function updateSwipeFactor() {
@@ -156,24 +200,24 @@
     const c = ctx;
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
-    // Build a map from midi note to the active note’s track
-    const activeMidiTracks = new Map<number, number>();
-    for (const note of allNotes) {
-      if (activeNotes.has(note.id)) {
-        activeMidiTracks.set(note.midi, note.track);
-      }
-    }
+
+    // Use cached active midi tracks from the reactive map.
+    const activeMidiTracks = cachedActiveMidiTracks;
+
     const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
+
     // Draw white keys first
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const track = activeMidiTracks.get(midi);
       const fillColor =
         track !== undefined
@@ -184,11 +228,14 @@
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w, pianoHeight);
     }
+
     // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const track = activeMidiTracks.get(midi);
       const fillColor =
@@ -198,6 +245,7 @@
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
+
     // Optionally add note names on white keys
     c.fillStyle = CONFIG.fontColor;
     const keyFontSize = pianoHeight * 0.15;
@@ -207,8 +255,10 @@
     const keyYOffset = pianoHeight * 0.11;
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       c.fillText(
         midiToNoteNameNoOctave(midi),
         x + w / 2,
@@ -238,13 +288,14 @@
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
-      const x = getKeyX(note.midi, leftOffset, scale);
-      const w = getKeyWidth(note.midi, scale);
+      const key = keyCache.get(note.midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const noteRadius = Math.min(
         w * noteRadiusPercent,
         Math.min(w / 2, noteHeight / 2)
       );
-      // Pass isBlackKey(note.midi) to adjust active note color based on key type.
       c.fillStyle = getTrackColor(note.track, true, isBlackKey(note.midi));
       c.beginPath();
       c.moveTo(x + noteRadius, topY);
@@ -283,11 +334,13 @@
 
   function updateActiveNotes() {
     activeNotes.clear();
+    cachedActiveMidiTracks.clear();
     for (const note of allNotes) {
       const activationTime = note.time + audioVisualOffset;
       const deactivationTime = note.time + note.duration + audioVisualOffset;
       if (currentTime >= activationTime && currentTime <= deactivationTime) {
         activeNotes.add(note.id);
+        cachedActiveMidiTracks.set(note.midi, note.track);
       }
     }
   }
@@ -301,10 +354,11 @@
       fps = 1000 / delta;
     }
     lastFrameTimestamp = now;
-
     const newTime = Tone.getContext().now() - audioStartTime;
-    const smoothingFactor = 0.1;
+    // Keep the smoothing factor
+    const smoothingFactor = 0.11;
     currentTime += (newTime - currentTime) * smoothingFactor;
+
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
@@ -420,17 +474,19 @@
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
+    // Update active notes and redraw the canvas right away
+    updateActiveNotes();
+    drawAll();
     if (val >= totalDuration) {
       Tone.getTransport().pause();
       isPlaying = false;
       isPaused = true;
-      drawAll();
     } else {
       audioStartTime = Tone.getContext().now() - val;
       Tone.getTransport().seconds = val;
-      drawAll();
     }
   }
+
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -440,10 +496,14 @@
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
+    // When not playing, update active notes and redraw one last time
+    updateActiveNotes();
+    drawAll();
     isSliding = false;
   }
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
+
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -477,6 +537,7 @@
       drawAll();
     })();
   });
+
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -494,6 +555,7 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -541,12 +603,14 @@
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
+      updateActiveNotes(); // update active notes when swiping
       Tone.getTransport().seconds = currentTime;
       audioStartTime = Tone.getContext().now() - currentTime;
       drawAll();
       lastY = e.clientY;
     }
   }
+
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerId !== activePointerId) return;
@@ -570,12 +634,16 @@
         requestAnimationFrame(animate);
       }
     }
+    // Update active notes and redraw after the pointer ends
+    updateActiveNotes();
+    drawAll();
     startX = null;
     startY = null;
     lastY = null;
     isSwiping = false;
     activePointerId = null;
   }
+
   function pauseAtEnd() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -587,6 +655,7 @@
       animationFrameId = null;
     }
   }
+
   function haltPlayback() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -598,6 +667,7 @@
     }
     drawAll();
   }
+
   onMount(() => {
     if (browser) {
       const ctx = new Tone.Context({
@@ -707,7 +777,6 @@
     ></canvas>
   </div>
 </div>
-
 {#if showCalibrationModal}
   <!-- Modal overlay for calibration -->
   <div
