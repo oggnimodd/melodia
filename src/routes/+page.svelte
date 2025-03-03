@@ -29,6 +29,7 @@
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
   import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
+  import SettingsModal from "$lib/components/SettingsModal.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -53,18 +54,12 @@
   let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
-  // FPS counter states
   let fps = $state(0);
   let lastFrameTimestamp = $state<number | null>(null);
-
-  // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
-
-  // Use reactive SvelteMap for caching key positions/widths.
   let keyCache = new SvelteMap<number, { x: number; w: number }>();
   function updateKeyCache() {
     keyCache.clear();
-    // Cache for all possible midi values (0-127)
     for (let midi = 0; midi < 128; midi++) {
       keyCache.set(midi, {
         x: getKeyX(midi, leftOffset, scale),
@@ -72,14 +67,9 @@
       });
     }
   }
-
-  // Reactive map for active midi tracks computed from active notes.
   let cachedActiveMidiTracks = new SvelteMap<number, number>();
-
   let totalDuration = $derived(midiData?.totalDuration || 0);
-  // For syncing with the audio clock
   let audioStartTime = 0;
-  // Swipe detection
   let startY = $state<number | null>(null);
   let startX = $state<number | null>(null);
   let lastY = $state<number | null>(null);
@@ -89,48 +79,38 @@
   let initialTimeBeforeSwipe = $state(0);
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1);
-  // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
-  // --- Calibration variables ---
-  let audioVisualOffset = $state(-0.1); // default offset in seconds
-  let showCalibrationModal = $state(false);
+  let showModal = $state(false);
+  let showLabels = $state(true);
+  let audioVisualOffset = $state(-0.1);
 
+  function handleResetOffset() {
+    audioVisualOffset = -0.1;
+  }
+  function handleCloseModal() {
+    showModal = false;
+  }
   function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
-      if (isPlaying) {
-        haltPlayback();
-      }
-
-      // Clear previous active keys cache
+      if (isPlaying) haltPlayback();
       activeNotes.clear();
       cachedActiveMidiTracks.clear();
-
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
     }
   }
-
   function initCanvas() {
     if (!containerDiv || !canvas) return;
-
-    // Get container dimensions
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
     let finalWidth = containerWidth;
-    let finalHeight = 0;
-
-    if (fullscreen.isActive) {
-      const controlsHeight = controlsDiv?.offsetHeight || 0;
-      finalHeight = containerHeight - controlsHeight;
-      if (finalHeight < 0) finalHeight = containerHeight;
-    } else {
-      finalHeight = window.innerHeight * 0.7;
-    }
-
-    // Setup canvas with devicePixelRatio
+    let finalHeight = fullscreen.isActive
+      ? containerHeight - (controlsDiv?.offsetHeight || 0)
+      : window.innerHeight * 0.7;
+    if (finalHeight < 0) finalHeight = containerHeight;
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -138,32 +118,21 @@
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
-
     const context = canvas.getContext("2d");
     if (!context) return;
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
-
     if (!allNotes.length) return;
-
-    // --- Calculate rendered range using octaves ---
     const actualMin = minMidi;
     const actualMax = maxMidi;
     const center = (actualMin + actualMax) / 2;
-
-    // Compute how many octaves your notes span. One octave = 12 semitones.
     const actualOctaves = Math.ceil((actualMax - actualMin + 1) / 12);
-    // Enforce a minimum of 6 octaves.
     const renderedOctaves = Math.max(actualOctaves, 6);
     const renderedSemitones = renderedOctaves * 12;
-
-    // Center the rendered range around the note center and snap to a C (multiple of 12)
     let newMinMidi = Math.floor((center - renderedSemitones / 2) / 12) * 12;
     let newMaxMidi = newMinMidi + renderedSemitones - 1;
-
-    // Ensure the rendered range fully covers your actual notes.
     if (newMinMidi > actualMin) {
       newMinMidi = Math.floor(actualMin / 12) * 12;
       newMaxMidi = newMinMidi + renderedSemitones - 1;
@@ -172,52 +141,38 @@
       newMaxMidi = Math.ceil((actualMax + 1) / 12) * 12 - 1;
       newMinMidi = newMaxMidi - renderedSemitones + 1;
     }
-
-    // After your final checks to ensure you cover actualMin..actualMax:
     const extraWhiteKeys = 3;
-    // Convert white keys to semitones (7 white keys per 12 semitones):
     const extraSemitones = Math.ceil((extraWhiteKeys * 12) / 7);
     newMaxMidi += extraSemitones;
-
-    // Compute layout offsets and scale to fill the canvas exactly.
     minOffset = getLayoutOffsetRaw(newMinMidi);
     maxOffset = getLayoutOffsetRaw(newMaxMidi);
     leftOffset = minOffset;
     scale = finalWidth / (maxOffset - minOffset);
-
     updateSwipeFactor();
     updateKeyCache();
   }
-
   function updateSwipeFactor() {
     const pianoTopY =
       canvasCssHeight - canvasCssHeight * CONFIG.pianoHeightRatio;
     swipeFactor = CONFIG.visibleSeconds / pianoTopY;
   }
-
   function drawPianoKeys() {
     if (!ctx || !canvas) return;
     const c = ctx;
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
-
-    // Use cached active midi tracks from the reactive map.
     const activeMidiTracks = cachedActiveMidiTracks;
-
     const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
-
-    // Draw white keys first
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const key = keyCache.get(midi);
       if (!key) continue;
-      const x = key.x;
-      const w = key.w;
+      const { x, w } = key;
       const track = activeMidiTracks.get(midi);
       const fillColor =
         track !== undefined
@@ -228,14 +183,11 @@
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w, pianoHeight);
     }
-
-    // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const key = keyCache.get(midi);
       if (!key) continue;
-      const x = key.x;
-      const w = key.w;
+      const { x, w } = key;
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const track = activeMidiTracks.get(midi);
       const fillColor =
@@ -245,28 +197,26 @@
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
-
-    // Optionally add note names on white keys
-    c.fillStyle = CONFIG.fontColor;
-    const keyFontSize = pianoHeight * 0.15;
-    c.font = "500 " + keyFontSize + "px sans-serif";
-    c.textAlign = "center";
-    c.textBaseline = "middle";
-    const keyYOffset = pianoHeight * 0.11;
-    for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
-      if (isBlackKey(midi)) continue;
-      const key = keyCache.get(midi);
-      if (!key) continue;
-      const x = key.x;
-      const w = key.w;
-      c.fillText(
-        midiToNoteNameNoOctave(midi),
-        x + w / 2,
-        canvasCssHeight - keyYOffset
-      );
+    if (showLabels) {
+      c.fillStyle = CONFIG.fontColor;
+      const keyFontSize = pianoHeight * 0.15;
+      c.font = "500 " + keyFontSize + "px sans-serif";
+      c.textAlign = "center";
+      c.textBaseline = "middle";
+      const keyYOffset = pianoHeight * 0.11;
+      for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
+        if (isBlackKey(midi)) continue;
+        const key = keyCache.get(midi);
+        if (!key) continue;
+        const { x, w } = key;
+        c.fillText(
+          midiToNoteNameNoOctave(midi),
+          x + w / 2,
+          canvasCssHeight - keyYOffset
+        );
+      }
     }
   }
-
   function drawNotes() {
     if (!ctx || !canvas) return;
     const c = ctx;
@@ -279,7 +229,6 @@
       (n) => n.time + audioVisualOffset + n.duration >= visibleStart
     );
     if (startIdx === -1) return;
-    const noteRadiusPercent = 0.1;
     for (let i = startIdx; i < allNotes.length; i++) {
       const note = allNotes[i];
       if (note.time + audioVisualOffset > visibleEnd) break;
@@ -290,12 +239,8 @@
       const topY = bottomY - noteHeight;
       const key = keyCache.get(note.midi);
       if (!key) continue;
-      const x = key.x;
-      const w = key.w;
-      const noteRadius = Math.min(
-        w * noteRadiusPercent,
-        Math.min(w / 2, noteHeight / 2)
-      );
+      const { x, w } = key;
+      const noteRadius = Math.min(w * 0.1, Math.min(w / 2, noteHeight / 2));
       c.fillStyle = getTrackColor(note.track, true, isBlackKey(note.midi));
       c.beginPath();
       c.moveTo(x + noteRadius, topY);
@@ -308,7 +253,7 @@
       c.lineTo(x, topY + noteRadius);
       c.arcTo(x, topY, x + noteRadius, topY, noteRadius);
       c.fill();
-      if (noteHeight > 15) {
+      if (showLabels && noteHeight > 15) {
         c.fillStyle = "#fff";
         c.font = "bold 12px sans-serif";
         c.textAlign = "center";
@@ -321,7 +266,6 @@
       }
     }
   }
-
   function drawAll() {
     if (!ctx || !canvas) return;
     ctx.clearRect(0, 0, canvasCssWidth, canvasCssHeight);
@@ -331,7 +275,6 @@
       drawPianoKeys();
     });
   }
-
   function updateActiveNotes() {
     activeNotes.clear();
     cachedActiveMidiTracks.clear();
@@ -344,10 +287,8 @@
       }
     }
   }
-
   function animate() {
     if (!isPlaying || !ctx || !canvas) return;
-    // FPS calculation
     const now = performance.now();
     if (lastFrameTimestamp !== null) {
       const delta = now - lastFrameTimestamp;
@@ -355,10 +296,7 @@
     }
     lastFrameTimestamp = now;
     const newTime = Tone.getContext().now() - audioStartTime;
-    // Keep the smoothing factor
-    const smoothingFactor = 0.11;
-    currentTime += (newTime - currentTime) * smoothingFactor;
-
+    currentTime += (newTime - currentTime) * 0.11;
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
@@ -367,7 +305,6 @@
     drawAll();
     animationFrameId = requestAnimationFrame(animate);
   }
-
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
@@ -393,7 +330,6 @@
     transport.start();
     requestAnimationFrame(animate);
   }
-
   function togglePauseResume() {
     if (!isPlaying) return;
     if (!isPaused) {
@@ -410,7 +346,6 @@
       requestAnimationFrame(animate);
     }
   }
-
   function handlePlayButtonClick() {
     if (!isPlaying || currentTime >= totalDuration) {
       playMidi();
@@ -418,7 +353,6 @@
       togglePauseResume();
     }
   }
-
   function seekBackward() {
     let newTime = currentTime - 5;
     if (newTime < 0) newTime = 0;
@@ -437,7 +371,6 @@
       drawAll();
     }
   }
-
   function seekForward() {
     let newTime = currentTime + 5;
     if (newTime > totalDuration) newTime = totalDuration;
@@ -456,7 +389,6 @@
       drawAll();
     }
   }
-
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
   function handleSliderMouseDown(e: MouseEvent) {
@@ -474,7 +406,6 @@
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
-    // Update active notes and redraw the canvas right away
     updateActiveNotes();
     drawAll();
     if (val >= totalDuration) {
@@ -486,7 +417,6 @@
       Tone.getTransport().seconds = val;
     }
   }
-
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -496,14 +426,12 @@
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
-    // When not playing, update active notes and redraw one last time
     updateActiveNotes();
     drawAll();
     isSliding = false;
   }
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
-
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -537,7 +465,6 @@
       drawAll();
     })();
   });
-
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -555,7 +482,6 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
-
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -565,7 +491,6 @@
     transport.cancel(0);
     isPlaying = false;
   });
-
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (activePointerId !== null && e.pointerId !== activePointerId) return;
@@ -584,9 +509,7 @@
         animationFrameId = null;
       }
     }
-    if (canvas) {
-      canvas.setPointerCapture(e.pointerId);
-    }
+    if (canvas) canvas.setPointerCapture(e.pointerId);
   }
   function handleCanvasPointerMove(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return;
@@ -603,14 +526,13 @@
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
-      updateActiveNotes(); // update active notes when swiping
+      updateActiveNotes();
       Tone.getTransport().seconds = currentTime;
       audioStartTime = Tone.getContext().now() - currentTime;
       drawAll();
       lastY = e.clientY;
     }
   }
-
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerId !== activePointerId) return;
@@ -621,9 +543,7 @@
         playMidi();
       } else if (isPaused && !wasPlayingBeforeInteraction) {
         togglePauseResume();
-      } else if (wasPlayingBeforeInteraction) {
-        // Keep paused.
-      } else {
+      } else if (!wasPlayingBeforeInteraction) {
         togglePauseResume();
       }
     } else {
@@ -634,7 +554,6 @@
         requestAnimationFrame(animate);
       }
     }
-    // Update active notes and redraw after the pointer ends
     updateActiveNotes();
     drawAll();
     startX = null;
@@ -643,7 +562,6 @@
     isSwiping = false;
     activePointerId = null;
   }
-
   function pauseAtEnd() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -655,7 +573,6 @@
       animationFrameId = null;
     }
   }
-
   function haltPlayback() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -667,7 +584,6 @@
     }
     drawAll();
   }
-
   onMount(() => {
     if (browser) {
       const ctx = new Tone.Context({
@@ -676,8 +592,6 @@
       });
       Tone.setContext(ctx);
       Tone.immediate();
-
-      // Preload the sampler immediately
       (async () => {
         pianoSampler = createSalamanderPiano();
         await Tone.loaded();
@@ -749,7 +663,7 @@
           <Button
             class="bg-orange-500 hover:bg-orange-600"
             size="icon-sm"
-            onclick={() => (showCalibrationModal = true)}
+            onclick={() => (showModal = true)}
           >
             <IconSettings />
           </Button>
@@ -784,50 +698,17 @@
     ></canvas>
   </div>
 </div>
-{#if showCalibrationModal}
-  <!-- Modal overlay for calibration -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-  >
-    <div class="w-80 rounded-lg bg-gray-800 p-6">
-      <h2 class="mb-4 text-xl font-semibold text-white">Calibrate A/V Sync</h2>
-      <p class="mb-4 text-sm text-gray-300">
-        Adjust the slider until the visual tiles match the piano keys being
-        pressed.
-        <strong>
-          If the visuals are too fast (you hear the audio before you see the
-          keys pressed), slide right to delay them; if they're too slow, slide
-          left.
-        </strong>
-      </p>
-      <div class="mb-2 flex items-center gap-2">
-        <span class="text-sm text-white"
-          >Offset: {audioVisualOffset.toFixed(2)}s</span
-        >
-      </div>
-      <Slider
-        value={audioVisualOffset}
-        min={-0.5}
-        max={0.5}
-        step={0.01}
-        oninput={(e) => {
-          audioVisualOffset = parseFloat((e.target as HTMLInputElement).value);
-        }}
-      />
-      <div class="mt-4 flex justify-end gap-2">
-        <!-- Reset button -->
-        <Button size="sm" onclick={() => (audioVisualOffset = -0.1)}
-          >Reset</Button
-        >
-        <Button size="sm" onclick={() => (showCalibrationModal = false)}
-          >Close</Button
-        >
-      </div>
-    </div>
-  </div>
-{/if}
 
-<!-- FPS Counter -->
+<SettingsModal
+  {showModal}
+  {audioVisualOffset}
+  {showLabels}
+  onClose={handleCloseModal}
+  onResetOffset={handleResetOffset}
+  setShowLabels={(val) => (showLabels = val)}
+  setAudioVisualOffset={(val) => (audioVisualOffset = val)}
+/>
+
 <div
   class="fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
 >
