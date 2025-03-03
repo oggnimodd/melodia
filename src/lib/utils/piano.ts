@@ -213,7 +213,7 @@ export function createSalamanderPiano() {
       C8: "C8.mp3",
     },
     baseUrl: "https://tonejs.github.io/audio/salamander/",
-    attack: 0.05,
-    release: 1.3,
+    attack: 0.02,
+    release: 1.5,
   }).toDestination();
 }
