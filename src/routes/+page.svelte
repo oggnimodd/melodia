@@ -474,17 +474,19 @@
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
+    // Update active notes and redraw the canvas right away
+    updateActiveNotes();
+    drawAll();
     if (val >= totalDuration) {
       Tone.getTransport().pause();
       isPlaying = false;
       isPaused = true;
-      drawAll();
     } else {
       audioStartTime = Tone.getContext().now() - val;
       Tone.getTransport().seconds = val;
-      drawAll();
     }
   }
+
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
@@ -494,9 +496,11 @@
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
+    // When not playing, update active notes and redraw one last time
+    updateActiveNotes();
+    drawAll();
     isSliding = false;
   }
-
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
 
@@ -599,12 +603,14 @@
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
+      updateActiveNotes(); // update active notes when swiping
       Tone.getTransport().seconds = currentTime;
       audioStartTime = Tone.getContext().now() - currentTime;
       drawAll();
       lastY = e.clientY;
     }
   }
+
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerId !== activePointerId) return;
@@ -628,6 +634,9 @@
         requestAnimationFrame(animate);
       }
     }
+    // Update active notes and redraw after the pointer ends
+    updateActiveNotes();
+    drawAll();
     startX = null;
     startY = null;
     lastY = null;
