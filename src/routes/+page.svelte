@@ -676,6 +676,13 @@
       });
       Tone.setContext(ctx);
       Tone.immediate();
+
+      // Preload the sampler immediately
+      (async () => {
+        pianoSampler = createSalamanderPiano();
+        await Tone.loaded();
+        console.log("Sampler preloaded");
+      })();
     }
   });
 </script>
