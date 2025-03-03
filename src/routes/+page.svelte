@@ -110,17 +110,24 @@
 
   function initCanvas() {
     if (!containerDiv || !canvas) return;
+
+    // Measure container
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
+
     let finalWidth = containerWidth;
     let finalHeight = 0;
+
+    // Handle fullscreen vs. normal
     if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
-      const availableHeight = containerHeight - controlsHeight;
-      finalHeight = availableHeight > 0 ? availableHeight : containerHeight;
+      finalHeight = containerHeight - controlsHeight;
+      if (finalHeight < 0) finalHeight = containerHeight;
     } else {
       finalHeight = window.innerHeight * 0.7;
     }
+
+    // Set up canvas dimensions
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -128,36 +135,63 @@
     canvas.height = finalHeight * dpr;
     canvas.style.width = finalWidth + "px";
     canvas.style.height = finalHeight + "px";
+
     const context = canvas.getContext("2d");
     if (!context) return;
     context.scale(dpr, dpr);
     context.imageSmoothingEnabled = false;
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
+
+    // If no notes, we’re done
     if (!allNotes.length) return;
-    // Calculate number of white keys required to fill the canvas width
-    const minKeysToDisplay = 7; // Minimum one octave
+
+    // 1) Actual MIDI range
+    const actualRange = maxMidi - minMidi + 1;
+
+    // 2) Figure out how many white keys we'd need so each key is not *too* big
+    //    For example, if we want each white key to be ~20px wide:
+    const desiredKeyWidth = 20;
+    const possibleWhiteKeys = Math.floor(finalWidth / desiredKeyWidth);
+
+    // 3) Force a minimum (7 white keys = one octave)
+    const minWhiteKeys = Math.max(possibleWhiteKeys, 7);
+
+    // 4) Also ensure we cover the real range
+    //    Convert the actual MIDI semitone range to how many white keys that roughly is:
+    //    (7 white keys per 12 semitones). So actualRange semitones ~ (actualRange * 7) / 12 white keys.
+    const actualWhiteKeys = Math.ceil((actualRange * 7) / 12);
+    let neededWhiteKeys = Math.max(minWhiteKeys, actualWhiteKeys);
+
+    // If you want to force that number to be a multiple of 7 (so it lines up nicely on octaves):
     const whiteKeysPerOctave = 7;
-    const requiredRange = maxMidi - minMidi;
-    const reasonableKeyWidth = finalWidth / 40;
-    let totalWhiteKeys = Math.ceil(finalWidth / reasonableKeyWidth);
-    totalWhiteKeys = Math.max(totalWhiteKeys, minKeysToDisplay);
-    totalWhiteKeys = Math.max(totalWhiteKeys, requiredRange);
-    totalWhiteKeys =
-      Math.ceil(totalWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
-    const midiRangeNeeded = Math.ceil((totalWhiteKeys * 12) / 7);
-    const centerMidi = (minMidi + maxMidi) / 2;
-    const halfRange = midiRangeNeeded / 2;
-    const newMinMidi = Math.floor(centerMidi - halfRange);
-    const newMaxMidi = Math.ceil(centerMidi + halfRange);
-    const finalMinMidi = Math.min(minMidi, newMinMidi);
-    const finalMaxMidi = Math.max(maxMidi, newMaxMidi);
-    minOffset = getLayoutOffsetRaw(finalMinMidi);
-    maxOffset = getLayoutOffsetRaw(finalMaxMidi);
+    neededWhiteKeys =
+      Math.ceil(neededWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
+
+    // 5) Convert that back to semitones
+    const neededSemitones = Math.ceil((neededWhiteKeys * 12) / 7);
+
+    // 6) Center that range around the midpoint
+    const center = (minMidi + maxMidi) / 2;
+    const half = neededSemitones / 2;
+    let newMinMidi = Math.floor(center - half);
+    let newMaxMidi = Math.ceil(center + half);
+
+    // Make sure we at least cover [minMidi..maxMidi]
+    if (newMinMidi > minMidi) newMinMidi = minMidi;
+    if (newMaxMidi < maxMidi) newMaxMidi = maxMidi;
+
+    // 7) Compute offsets for those final bounds
+    minOffset = getLayoutOffsetRaw(newMinMidi);
+    maxOffset = getLayoutOffsetRaw(newMaxMidi);
     leftOffset = minOffset;
+
+    // 8) Scale to fill the entire canvas width exactly
     scale = finalWidth / (maxOffset - minOffset);
+
+    // Update everything else
     updateSwipeFactor();
-    updateKeyCache(); // Cache key positions/widths once
+    updateKeyCache();
   }
 
   function updateSwipeFactor() {
@@ -327,7 +361,7 @@
     lastFrameTimestamp = now;
     const newTime = Tone.getContext().now() - audioStartTime;
     // Keep the smoothing factor
-    const smoothingFactor = 0.1;
+    const smoothingFactor = 0.11;
     currentTime += (newTime - currentTime) * smoothingFactor;
 
     if (currentTime >= totalDuration) {
