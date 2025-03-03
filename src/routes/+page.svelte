@@ -111,14 +111,12 @@
   function initCanvas() {
     if (!containerDiv || !canvas) return;
 
-    // Measure container
+    // Get container dimensions
     const containerHeight = containerDiv.offsetHeight;
     const containerWidth = containerDiv.offsetWidth;
-
     let finalWidth = containerWidth;
     let finalHeight = 0;
 
-    // Handle fullscreen vs. normal
     if (fullscreen.isActive) {
       const controlsHeight = controlsDiv?.offsetHeight || 0;
       finalHeight = containerHeight - controlsHeight;
@@ -127,7 +125,7 @@
       finalHeight = window.innerHeight * 0.7;
     }
 
-    // Set up canvas dimensions
+    // Setup canvas with devicePixelRatio
     const dpr = window.devicePixelRatio || 1;
     canvasCssWidth = finalWidth;
     canvasCssHeight = finalHeight;
@@ -143,53 +141,45 @@
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
 
-    // If no notes, we’re done
     if (!allNotes.length) return;
 
-    // 1) Actual MIDI range
-    const actualRange = maxMidi - minMidi + 1;
+    // --- Calculate rendered range using octaves ---
+    const actualMin = minMidi;
+    const actualMax = maxMidi;
+    const center = (actualMin + actualMax) / 2;
 
-    // 2) Figure out how many white keys we'd need so each key is not *too* big
-    //    For example, if we want each white key to be ~20px wide:
-    const desiredKeyWidth = 20;
-    const possibleWhiteKeys = Math.floor(finalWidth / desiredKeyWidth);
+    // Compute how many octaves your notes span. One octave = 12 semitones.
+    const actualOctaves = Math.ceil((actualMax - actualMin + 1) / 12);
+    // Enforce a minimum of 6 octaves.
+    const renderedOctaves = Math.max(actualOctaves, 6);
+    const renderedSemitones = renderedOctaves * 12;
 
-    // 3) Force a minimum (7 white keys = one octave)
-    const minWhiteKeys = Math.max(possibleWhiteKeys, 7);
+    // Center the rendered range around the note center and snap to a C (multiple of 12)
+    let newMinMidi = Math.floor((center - renderedSemitones / 2) / 12) * 12;
+    let newMaxMidi = newMinMidi + renderedSemitones - 1;
 
-    // 4) Also ensure we cover the real range
-    //    Convert the actual MIDI semitone range to how many white keys that roughly is:
-    //    (7 white keys per 12 semitones). So actualRange semitones ~ (actualRange * 7) / 12 white keys.
-    const actualWhiteKeys = Math.ceil((actualRange * 7) / 12);
-    let neededWhiteKeys = Math.max(minWhiteKeys, actualWhiteKeys);
+    // Ensure the rendered range fully covers your actual notes.
+    if (newMinMidi > actualMin) {
+      newMinMidi = Math.floor(actualMin / 12) * 12;
+      newMaxMidi = newMinMidi + renderedSemitones - 1;
+    }
+    if (newMaxMidi < actualMax) {
+      newMaxMidi = Math.ceil((actualMax + 1) / 12) * 12 - 1;
+      newMinMidi = newMaxMidi - renderedSemitones + 1;
+    }
 
-    // If you want to force that number to be a multiple of 7 (so it lines up nicely on octaves):
-    const whiteKeysPerOctave = 7;
-    neededWhiteKeys =
-      Math.ceil(neededWhiteKeys / whiteKeysPerOctave) * whiteKeysPerOctave;
+    // After your final checks to ensure you cover actualMin..actualMax:
+    const extraWhiteKeys = 3;
+    // Convert white keys to semitones (7 white keys per 12 semitones):
+    const extraSemitones = Math.ceil((extraWhiteKeys * 12) / 7);
+    newMaxMidi += extraSemitones;
 
-    // 5) Convert that back to semitones
-    const neededSemitones = Math.ceil((neededWhiteKeys * 12) / 7);
-
-    // 6) Center that range around the midpoint
-    const center = (minMidi + maxMidi) / 2;
-    const half = neededSemitones / 2;
-    let newMinMidi = Math.floor(center - half);
-    let newMaxMidi = Math.ceil(center + half);
-
-    // Make sure we at least cover [minMidi..maxMidi]
-    if (newMinMidi > minMidi) newMinMidi = minMidi;
-    if (newMaxMidi < maxMidi) newMaxMidi = maxMidi;
-
-    // 7) Compute offsets for those final bounds
+    // Compute layout offsets and scale to fill the canvas exactly.
     minOffset = getLayoutOffsetRaw(newMinMidi);
     maxOffset = getLayoutOffsetRaw(newMaxMidi);
     leftOffset = minOffset;
-
-    // 8) Scale to fill the entire canvas width exactly
     scale = finalWidth / (maxOffset - minOffset);
 
-    // Update everything else
     updateSwipeFactor();
     updateKeyCache();
   }
