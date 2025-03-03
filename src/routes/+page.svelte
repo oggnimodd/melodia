@@ -102,6 +102,11 @@
       if (isPlaying) {
         haltPlayback();
       }
+
+      // Clear previous active keys cache
+      activeNotes.clear();
+      cachedActiveMidiTracks.clear();
+
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
