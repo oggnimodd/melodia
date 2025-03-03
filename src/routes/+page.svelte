@@ -27,7 +27,7 @@
   } from "$lib/utils/piano";
   import { formatSecondsToTime } from "$lib/utils/time";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
-  import { SvelteSet } from "svelte/reactivity";
+  import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
@@ -53,13 +53,29 @@
   let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
-
   // FPS counter states
   let fps = $state(0);
   let lastFrameTimestamp = $state<number | null>(null);
 
   // Instead of scheduling active notes, we update them on every frame.
   let activeNotes = new SvelteSet<number>();
+
+  // Use reactive SvelteMap for caching key positions/widths.
+  let keyCache = new SvelteMap<number, { x: number; w: number }>();
+  function updateKeyCache() {
+    keyCache.clear();
+    // Cache for all possible midi values (0-127)
+    for (let midi = 0; midi < 128; midi++) {
+      keyCache.set(midi, {
+        x: getKeyX(midi, leftOffset, scale),
+        w: getKeyWidth(midi, scale),
+      });
+    }
+  }
+
+  // Reactive map for active midi tracks computed from active notes.
+  let cachedActiveMidiTracks = new SvelteMap<number, number>();
+
   let totalDuration = $derived(midiData?.totalDuration || 0);
   // For syncing with the audio clock
   let audioStartTime = 0;
@@ -73,7 +89,6 @@
   let initialTimeBeforeSwipe = $state(0);
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1);
-
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
@@ -120,7 +135,6 @@
     ctx = context;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
     if (!allNotes.length) return;
-
     // Calculate number of white keys required to fill the canvas width
     const minKeysToDisplay = 7; // Minimum one octave
     const whiteKeysPerOctave = 7;
@@ -143,6 +157,7 @@
     leftOffset = minOffset;
     scale = finalWidth / (maxOffset - minOffset);
     updateSwipeFactor();
+    updateKeyCache(); // Cache key positions/widths once
   }
 
   function updateSwipeFactor() {
@@ -156,24 +171,24 @@
     const c = ctx;
     const pianoHeight = canvasCssHeight * CONFIG.pianoHeightRatio;
     const startY = canvasCssHeight - pianoHeight;
-    // Build a map from midi note to the active note’s track
-    const activeMidiTracks = new Map<number, number>();
-    for (const note of allNotes) {
-      if (activeNotes.has(note.id)) {
-        activeMidiTracks.set(note.midi, note.track);
-      }
-    }
+
+    // Use cached active midi tracks from the reactive map.
+    const activeMidiTracks = cachedActiveMidiTracks;
+
     const totalWidthUnits = canvasCssWidth / scale;
     const renderedMinMidi = Math.max(0, Math.floor(leftOffset / 7) * 12);
     const renderedMaxMidi = Math.min(
       127,
       Math.ceil((leftOffset + totalWidthUnits) / 7) * 12
     );
+
     // Draw white keys first
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const track = activeMidiTracks.get(midi);
       const fillColor =
         track !== undefined
@@ -184,11 +199,14 @@
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w, pianoHeight);
     }
+
     // Draw black keys
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const h = pianoHeight * CONFIG.blackKeyHeightRatio;
       const track = activeMidiTracks.get(midi);
       const fillColor =
@@ -198,6 +216,7 @@
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
+
     // Optionally add note names on white keys
     c.fillStyle = CONFIG.fontColor;
     const keyFontSize = pianoHeight * 0.15;
@@ -207,8 +226,10 @@
     const keyYOffset = pianoHeight * 0.11;
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
-      const x = getKeyX(midi, leftOffset, scale);
-      const w = getKeyWidth(midi, scale);
+      const key = keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       c.fillText(
         midiToNoteNameNoOctave(midi),
         x + w / 2,
@@ -238,13 +259,14 @@
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;
       const topY = bottomY - noteHeight;
-      const x = getKeyX(note.midi, leftOffset, scale);
-      const w = getKeyWidth(note.midi, scale);
+      const key = keyCache.get(note.midi);
+      if (!key) continue;
+      const x = key.x;
+      const w = key.w;
       const noteRadius = Math.min(
         w * noteRadiusPercent,
         Math.min(w / 2, noteHeight / 2)
       );
-      // Pass isBlackKey(note.midi) to adjust active note color based on key type.
       c.fillStyle = getTrackColor(note.track, true, isBlackKey(note.midi));
       c.beginPath();
       c.moveTo(x + noteRadius, topY);
@@ -283,11 +305,13 @@
 
   function updateActiveNotes() {
     activeNotes.clear();
+    cachedActiveMidiTracks.clear();
     for (const note of allNotes) {
       const activationTime = note.time + audioVisualOffset;
       const deactivationTime = note.time + note.duration + audioVisualOffset;
       if (currentTime >= activationTime && currentTime <= deactivationTime) {
         activeNotes.add(note.id);
+        cachedActiveMidiTracks.set(note.midi, note.track);
       }
     }
   }
@@ -301,10 +325,11 @@
       fps = 1000 / delta;
     }
     lastFrameTimestamp = now;
-
     const newTime = Tone.getContext().now() - audioStartTime;
+    // Keep the smoothing factor
     const smoothingFactor = 0.1;
     currentTime += (newTime - currentTime) * smoothingFactor;
+
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
@@ -442,8 +467,10 @@
     }
     isSliding = false;
   }
+
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
+
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -477,6 +504,7 @@
       drawAll();
     })();
   });
+
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -494,6 +522,7 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -576,6 +605,7 @@
     isSwiping = false;
     activePointerId = null;
   }
+
   function pauseAtEnd() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -587,6 +617,7 @@
       animationFrameId = null;
     }
   }
+
   function haltPlayback() {
     Tone.getTransport().pause();
     isPlaying = false;
@@ -598,6 +629,7 @@
     }
     drawAll();
   }
+
   onMount(() => {
     if (browser) {
       const ctx = new Tone.Context({
@@ -707,7 +739,6 @@
     ></canvas>
   </div>
 </div>
-
 {#if showCalibrationModal}
   <!-- Modal overlay for calibration -->
   <div
