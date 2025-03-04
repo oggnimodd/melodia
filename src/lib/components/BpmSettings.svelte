@@ -102,12 +102,12 @@
   use:clickOutside
   class={cn(
     buttonVariants({ variant, size }),
-    cn(className, "relative flex items-center px-0")
+    cn(className, "relative flex !w-auto items-center px-0")
   )}
 >
   <!-- Minus button: updates BPM immediately -->
   <button
-    class="h-full rounded-l-md px-2 text-lg hover:bg-blue-600"
+    class="h-full rounded-l-md px-1.5 text-xs hover:bg-blue-600 lg:px-2 lg:text-lg"
     onclick={() => decrementSpeed(5)}
   >
     -
@@ -116,7 +116,7 @@
   <!-- BPM display & dropdown toggle -->
   <button
     onclick={() => (showBpmDropdown = !showBpmDropdown)}
-    class="text-[0.8rem] leading-[1.05rem] hover:bg-black hover:text-white"
+    class="text-[0.6rem] leading-[0.9rem] hover:bg-black hover:text-white lg:text-[0.8rem] lg:leading-[1.05rem]"
   >
     <span class="block font-bold">
       {userBPM.toFixed(2)} bpm
@@ -128,7 +128,7 @@
 
   <!-- Plus button: updates BPM immediately -->
   <button
-    class="h-full rounded-r-md px-2 text-lg hover:bg-blue-600"
+    class="h-full rounded-r-md px-1.5 text-xs hover:bg-blue-600 lg:px-2 lg:text-lg"
     onclick={() => incrementSpeed(5)}
   >
     +

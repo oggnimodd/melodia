@@ -444,7 +444,7 @@
 
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
-  function handleSliderMouseDown(e: MouseEvent) {
+  function handleSliderPointerDown(e: PointerEvent) {
     if (isPlaying && !isPaused) {
       wasPlayingBeforeSlide = true;
       Tone.getTransport().pause();
@@ -469,7 +469,7 @@
       (Tone.getTransport() as any).seconds = musicalToRealTime(val);
     }
   }
-  function handleSliderMouseUp() {
+  function handleSliderPointerUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
       Tone.getTransport().start(undefined, musicalToRealTime(val));
@@ -730,7 +730,7 @@
           </Button>
           <BpmSettings
             originalBpm={originalBPM}
-            size="sm"
+            size="icon-sm"
             {userBPM}
             {speedPercent}
             {incrementSpeed}
@@ -759,10 +759,10 @@
         <Slider
           value={currentTime}
           max={totalDuration}
-          onmousedown={handleSliderMouseDown}
+          onpointerdown={handleSliderPointerDown}
           oninput={handleSliderInput}
-          onmouseup={handleSliderMouseUp}
-          onchange={handleSliderMouseUp}
+          onpointerup={handleSliderPointerUp}
+          onchange={handleSliderPointerUp}
         />
         <span>{totalDurationFormatted}</span>
       </div>
@@ -793,7 +793,7 @@
   setAudioVisualOffset={(val) => (audioVisualOffset = val)}
 />
 <div
-  class="fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
+  class="pointer-events-none fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
 >
   FPS: {fps.toFixed(1)}
 </div>
