@@ -30,6 +30,7 @@
   import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
+  import BpmSettings from "$lib/components/BpmSettings.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -98,40 +99,26 @@
   function clampBetween(val: number, minVal: number, maxVal: number): number {
     return Math.max(minVal, Math.min(maxVal, val));
   }
-  function applySpeed() {
-    const currentMusicalPosition = currentTime;
-    speedPercent = clampBetween(speedPercent, 20, 200);
+  function applySpeed(newSpeed: number) {
+    speedPercent = clampBetween(newSpeed, 20, 200);
     userBPM = (originalBPM * speedPercent) / 100;
     Tone.getTransport().bpm.value = userBPM;
-    // Update transport position and base time to keep visuals in sync.
+    // Update transport if playing
     if (isPlaying) {
-      (Tone.getTransport() as any).seconds = musicalToRealTime(
-        currentMusicalPosition
-      );
-      audioStartTime =
-        Tone.getContext().now() - musicalToRealTime(currentMusicalPosition);
+      (Tone.getTransport() as any).seconds = musicalToRealTime(currentTime);
+      audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
     }
   }
   function incrementSpeed(step = 5) {
-    speedPercent = clampBetween(speedPercent + step, 20, 200);
-    applySpeed();
+    applySpeed(speedPercent + step);
   }
+
   function decrementSpeed(step = 5) {
-    speedPercent = clampBetween(speedPercent - step, 20, 200);
-    applySpeed();
+    applySpeed(speedPercent - step);
   }
   function resetSpeed() {
     speedPercent = 100;
-    const currentMusicalPosition = currentTime;
-    userBPM = originalBPM;
-    Tone.getTransport().bpm.value = userBPM;
-    if (isPlaying) {
-      (Tone.getTransport() as any).seconds = musicalToRealTime(
-        currentMusicalPosition
-      );
-      audioStartTime =
-        Tone.getContext().now() - musicalToRealTime(currentMusicalPosition);
-    }
+    applySpeed(100);
   }
 
   // --- Other Functions (unchanged unless noted) ---
@@ -680,6 +667,12 @@
       })();
     }
   });
+
+  let showBpmDropdown = $state(false);
+
+  function toggleBpmDropdown() {
+    showBpmDropdown = !showBpmDropdown;
+  }
 </script>
 
 <div
@@ -693,32 +686,6 @@
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
   {#if allNotes.length > 0}
-    <!-- BPM Controls (new) on top -->
-    <div class="mt-4 flex items-center justify-center gap-4 text-white">
-      <div class="flex items-center gap-2">
-        <button
-          class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-700"
-          onclick={() => decrementSpeed(5)}
-        >
-          -
-        </button>
-        <input
-          type="number"
-          class="w-16 rounded bg-gray-800 p-1 text-center"
-          min="20"
-          max="200"
-          bind:value={speedPercent}
-          oninput={applySpeed}
-        />
-        <button
-          class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-700"
-          onclick={() => incrementSpeed(5)}
-        >
-          +
-        </button>
-        <span class="ml-3">{speedPercent}% = {userBPM.toFixed(2)} BPM</span>
-      </div>
-    </div>
     <!-- Playback Controls & Slider -->
     <div
       class="flex items-center justify-center gap-4 text-white"
@@ -726,7 +693,7 @@
       bind:this={controlsDiv}
     >
       {#if midiFile}
-        <div class="mt-4 flex items-center gap-x-3">
+        <div class="mt-4 flex items-center gap-x-1.5">
           <Button
             class={cn("", {
               "bg-green-500 hover:bg-green-600":
@@ -761,6 +728,16 @@
           >
             <IconPlayerSkipForward />
           </Button>
+          <BpmSettings
+            originalBpm={originalBPM}
+            size="sm"
+            {userBPM}
+            {speedPercent}
+            {incrementSpeed}
+            {decrementSpeed}
+            {resetSpeed}
+            {applySpeed}
+          />
           <Button
             size="icon-sm"
             disabled={!midiFile}
