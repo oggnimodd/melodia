@@ -667,12 +667,6 @@
       })();
     }
   });
-
-  let showBpmDropdown = $state(false);
-
-  function toggleBpmDropdown() {
-    showBpmDropdown = !showBpmDropdown;
-  }
 </script>
 
 <div
