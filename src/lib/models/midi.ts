@@ -5,6 +5,7 @@ interface Note {
   name: string;
   id: number;
   track: number;
+  velocity?: number;
   hasLogged?: boolean;
 }
 
