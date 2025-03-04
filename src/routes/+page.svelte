@@ -80,11 +80,61 @@
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1);
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
-
   let showModal = $state(false);
   let showLabels = $state(true);
   let audioVisualOffset = $state(-0.1);
 
+  // --- BPM / Speed State & Helpers ---
+  let originalBPM = $state(120); // from MIDI header or fallback
+  let speedPercent = $state(100); // percentage (20-200%)
+  let userBPM = $state(120); // current playback BPM
+
+  function musicalToRealTime(musicalTime: number): number {
+    return musicalTime * (originalBPM / userBPM);
+  }
+  function realToMusicalTime(realTime: number): number {
+    return realTime * (userBPM / originalBPM);
+  }
+  function clampBetween(val: number, minVal: number, maxVal: number): number {
+    return Math.max(minVal, Math.min(maxVal, val));
+  }
+  function applySpeed() {
+    const currentMusicalPosition = currentTime;
+    speedPercent = clampBetween(speedPercent, 20, 200);
+    userBPM = (originalBPM * speedPercent) / 100;
+    Tone.getTransport().bpm.value = userBPM;
+    // Update transport position and base time to keep visuals in sync.
+    if (isPlaying) {
+      (Tone.getTransport() as any).seconds = musicalToRealTime(
+        currentMusicalPosition
+      );
+      audioStartTime =
+        Tone.getContext().now() - musicalToRealTime(currentMusicalPosition);
+    }
+  }
+  function incrementSpeed(step = 5) {
+    speedPercent = clampBetween(speedPercent + step, 20, 200);
+    applySpeed();
+  }
+  function decrementSpeed(step = 5) {
+    speedPercent = clampBetween(speedPercent - step, 20, 200);
+    applySpeed();
+  }
+  function resetSpeed() {
+    speedPercent = 100;
+    const currentMusicalPosition = currentTime;
+    userBPM = originalBPM;
+    Tone.getTransport().bpm.value = userBPM;
+    if (isPlaying) {
+      (Tone.getTransport() as any).seconds = musicalToRealTime(
+        currentMusicalPosition
+      );
+      audioStartTime =
+        Tone.getContext().now() - musicalToRealTime(currentMusicalPosition);
+    }
+  }
+
+  // --- Other Functions (unchanged unless noted) ---
   function handleResetOffset() {
     audioVisualOffset = -0.1;
   }
@@ -287,16 +337,23 @@
       }
     }
   }
+
   function animate() {
     if (!isPlaying || !ctx || !canvas) return;
-    const now = performance.now();
+    // Compute FPS using performance.now()
+    const nowPerf = performance.now();
     if (lastFrameTimestamp !== null) {
-      const delta = now - lastFrameTimestamp;
+      const delta = nowPerf - lastFrameTimestamp;
       fps = 1000 / delta;
     }
-    lastFrameTimestamp = now;
-    const newTime = Tone.getContext().now() - audioStartTime;
-    currentTime += (newTime - currentTime) * 0.11;
+    lastFrameTimestamp = nowPerf;
+
+    // Compute musical time based on Tone's audio clock
+    const nowAudio = Tone.getContext().now();
+    const elapsedReal = nowAudio - audioStartTime;
+    const newMusicalTime = realToMusicalTime(elapsedReal);
+    // Smooth update of currentTime with your smoothing factor
+    currentTime += (newMusicalTime - currentTime) * 0.11;
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
@@ -305,14 +362,12 @@
     drawAll();
     animationFrameId = requestAnimationFrame(animate);
   }
+
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
     isPaused = false;
     currentTime = 0;
-    animationStartTime = 0;
-    lastFrameTime = 0;
-    lastTransportTime = 0;
     await Tone.start();
     if (!pianoSampler) {
       pianoSampler = createSalamanderPiano();
@@ -321,13 +376,17 @@
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
+    // Schedule notes converting musical time to real time
     for (const n of allNotes) {
+      const realTime = musicalToRealTime(n.time);
       transport.schedule((time) => {
-        pianoSampler!.triggerAttackRelease(n.name, n.duration, time);
-      }, n.time);
+        const noteDuration = musicalToRealTime(n.duration);
+        pianoSampler!.triggerAttackRelease(n.name, noteDuration, time);
+      }, realTime);
     }
-    audioStartTime = Tone.getContext().now();
     transport.start();
+    // Set base time for smooth animation
+    audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
     requestAnimationFrame(animate);
   }
   function togglePauseResume() {
@@ -340,9 +399,10 @@
         animationFrameId = null;
       }
     } else {
-      Tone.getTransport().start(undefined, currentTime);
+      // Update audioStartTime so that the smooth animation resumes correctly
+      audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
+      Tone.getTransport().start(undefined, musicalToRealTime(currentTime));
       isPaused = false;
-      audioStartTime = Tone.getContext().now() - currentTime;
       requestAnimationFrame(animate);
     }
   }
@@ -363,11 +423,11 @@
     }
     if (isPlaying && !isPaused) {
       Tone.getTransport().pause();
-      Tone.getTransport().start(undefined, newTime);
-      audioStartTime = Tone.getContext().now() - newTime;
+      Tone.getTransport().start(undefined, musicalToRealTime(newTime));
+      audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
       requestAnimationFrame(animate);
     } else {
-      audioStartTime = Tone.getContext().now() - newTime;
+      (Tone.getTransport() as any).seconds = musicalToRealTime(newTime);
       drawAll();
     }
   }
@@ -381,14 +441,15 @@
     }
     if (isPlaying && !isPaused) {
       Tone.getTransport().pause();
-      Tone.getTransport().start(undefined, newTime);
-      audioStartTime = Tone.getContext().now() - newTime;
+      Tone.getTransport().start(undefined, musicalToRealTime(newTime));
+      audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
       requestAnimationFrame(animate);
     } else {
-      audioStartTime = Tone.getContext().now() - newTime;
+      (Tone.getTransport() as any).seconds = musicalToRealTime(newTime);
       drawAll();
     }
   }
+
   let isSliding = $state(false);
   let wasPlayingBeforeSlide = $state(false);
   function handleSliderMouseDown(e: MouseEvent) {
@@ -413,16 +474,15 @@
       isPlaying = false;
       isPaused = true;
     } else {
-      audioStartTime = Tone.getContext().now() - val;
-      Tone.getTransport().seconds = val;
+      (Tone.getTransport() as any).seconds = musicalToRealTime(val);
     }
   }
   function handleSliderMouseUp() {
     if (wasPlayingBeforeSlide) {
       const val = currentTime;
-      Tone.getTransport().start(undefined, val);
+      Tone.getTransport().start(undefined, musicalToRealTime(val));
+      audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
       isPaused = false;
-      audioStartTime = Tone.getContext().now() - val;
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
@@ -430,8 +490,11 @@
     drawAll();
     isSliding = false;
   }
+
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
+
+  // --- Process MIDI File & Set BPM ---
   $effect(() => {
     if (!midiFile) return;
     (async () => {
@@ -448,6 +511,7 @@
             midi: note.midi,
             name: note.name,
             track: trackIndex,
+            velocity: note.velocity,
           });
         });
       });
@@ -461,10 +525,19 @@
         minOffset = getLayoutOffsetRaw(minMidi);
         maxOffset = getLayoutOffsetRaw(maxMidi);
       }
+      if (data.header?.tempos && data.header.tempos.length > 0) {
+        originalBPM = data.header.tempos[0].bpm;
+      } else {
+        originalBPM = 120;
+      }
+      speedPercent = 100;
+      userBPM = originalBPM;
+      Tone.getTransport().bpm.value = userBPM;
       initCanvas();
       drawAll();
     })();
   });
+
   $effect(() => {
     if (!containerDiv) return;
     const ro = new ResizeObserver(() => {
@@ -482,6 +555,7 @@
       window.removeEventListener("resize", handleWindowResize);
     };
   });
+
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -491,6 +565,7 @@
     transport.cancel(0);
     isPlaying = false;
   });
+
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (activePointerId !== null && e.pointerId !== activePointerId) return;
@@ -527,8 +602,7 @@
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
       updateActiveNotes();
-      Tone.getTransport().seconds = currentTime;
-      audioStartTime = Tone.getContext().now() - currentTime;
+      (Tone.getTransport() as any).seconds = musicalToRealTime(currentTime);
       drawAll();
       lastY = e.clientY;
     }
@@ -548,9 +622,10 @@
       }
     } else {
       if (wasPlayingBeforeInteraction) {
-        Tone.getTransport().start(undefined, currentTime);
+        Tone.getTransport().start(undefined, musicalToRealTime(currentTime));
+        audioStartTime =
+          Tone.getContext().now() - musicalToRealTime(currentTime);
         isPaused = false;
-        audioStartTime = Tone.getContext().now() - currentTime;
         requestAnimationFrame(animate);
       }
     }
@@ -584,6 +659,7 @@
     }
     drawAll();
   }
+
   onMount(() => {
     if (browser) {
       const ctx = new Tone.Context({
@@ -612,6 +688,33 @@
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
   {#if allNotes.length > 0}
+    <!-- BPM Controls (new) on top -->
+    <div class="mt-4 flex items-center justify-center gap-4 text-white">
+      <div class="flex items-center gap-2">
+        <button
+          class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-700"
+          onclick={() => decrementSpeed(5)}
+        >
+          -
+        </button>
+        <input
+          type="number"
+          class="w-16 rounded bg-gray-800 p-1 text-center"
+          min="20"
+          max="200"
+          bind:value={speedPercent}
+          oninput={applySpeed}
+        />
+        <button
+          class="rounded bg-gray-600 px-2 py-1 hover:bg-gray-700"
+          onclick={() => incrementSpeed(5)}
+        >
+          +
+        </button>
+        <span class="ml-3">{speedPercent}% = {userBPM.toFixed(2)} BPM</span>
+      </div>
+    </div>
+    <!-- Playback Controls & Slider -->
     <div
       class="flex items-center justify-center gap-4 text-white"
       class:mt-4={!fullscreen.isActive}
@@ -698,7 +801,6 @@
     ></canvas>
   </div>
 </div>
-
 <SettingsModal
   {showModal}
   {audioVisualOffset}
@@ -708,7 +810,6 @@
   setShowLabels={(val) => (showLabels = val)}
   setAudioVisualOffset={(val) => (audioVisualOffset = val)}
 />
-
 <div
   class="fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
 >
