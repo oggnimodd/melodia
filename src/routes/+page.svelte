@@ -381,7 +381,12 @@
       const realTime = musicalToRealTime(n.time);
       transport.schedule((time) => {
         const noteDuration = musicalToRealTime(n.duration);
-        pianoSampler!.triggerAttackRelease(n.name, noteDuration, time);
+        pianoSampler!.triggerAttackRelease(
+          n.name,
+          noteDuration,
+          time,
+          n.velocity ?? 1
+        );
       }, realTime);
     }
     transport.start();
