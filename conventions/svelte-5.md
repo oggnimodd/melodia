@@ -382,6 +382,7 @@
 
 ####################################################
 - NEVER USE `writable` OR `context` ANYMORE IN SVELTE5, SHARING STATES BETWEEN COMPONENTS IS NOW DONE USING $STATE AND $DERIVED. YOU ARE NOT ALLOWED TO USE `writable` OR `context` IN SVELTE 5.
+- WHEN YOU WANT TO USE RUNES OUTSIDE OF SVELTE COMPONENTS, YOU MUST USE THE `*.svelte.ts` FILE EXTENSION.
 ####################################################
 
 
