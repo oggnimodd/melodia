@@ -21,6 +21,7 @@
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import PlaybackControls from "$lib/components/PlaybackControls.svelte";
+  import { useResizeObserver } from "$lib/hooks/useResizeObserver.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -517,22 +518,13 @@
     })();
   });
 
-  $effect(() => {
-    if (!containerDiv) return;
-    const ro = new ResizeObserver(() => {
+  useResizeObserver({
+    element: () => containerDiv,
+    onResize: () => {
+      console.log("here");
       initCanvas();
       drawAll();
-    });
-    ro.observe(containerDiv);
-    const handleWindowResize = () => {
-      initCanvas();
-      drawAll();
-    };
-    window.addEventListener("resize", handleWindowResize);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("resize", handleWindowResize);
-    };
+    },
   });
 
   onDestroy(() => {
