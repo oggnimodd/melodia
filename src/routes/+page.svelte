@@ -50,9 +50,6 @@
   let maxOffset = $state(0);
   let scale = $state(1);
   let leftOffset = $state(0);
-  let lastFrameTime = $state(0);
-  let animationStartTime = $state(0);
-  let lastTransportTime = $state(0);
   let canvasCssWidth = 0;
   let canvasCssHeight = 0;
   let fps = $state(0);
@@ -783,7 +780,11 @@
   {showLabels}
   onClose={handleCloseModal}
   onResetOffset={handleResetOffset}
-  setShowLabels={(val) => (showLabels = val)}
+  setShowLabels={(val) => {
+    showLabels = val;
+    // Auto reflect changes in the piano
+    (!isPlaying || isPaused) && drawAll();
+  }}
   setAudioVisualOffset={(val) => (audioVisualOffset = val)}
 />
 <div
