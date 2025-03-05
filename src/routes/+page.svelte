@@ -1,20 +1,10 @@
 <script lang="ts">
   import * as Tone from "tone";
   import { parseMidiFile } from "$lib/midi/parser";
-  import Button from "$lib/components/ui/button/button.svelte";
-  import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Input } from "$lib/components/ui/input";
-  import IconPlayerPlay from "@tabler/icons-svelte/icons/player-play-filled";
-  import IconPlayerPause from "@tabler/icons-svelte/icons/player-pause-filled";
-  import IconPlayerResume from "@tabler/icons-svelte/icons/player-track-next-filled";
-  import IconPlayerSkipBack from "@tabler/icons-svelte/icons/player-skip-back-filled";
-  import IconPlayerSkipForward from "@tabler/icons-svelte/icons/player-skip-forward-filled";
-  import IconMaximize from "@tabler/icons-svelte/icons/maximize";
-  import IconSettings from "@tabler/icons-svelte/icons/settings";
   import { onDestroy, onMount } from "svelte";
   import { browser } from "$app/environment";
   import { untrack } from "svelte";
-  import { cn } from "$lib/utils";
   import {
     CONFIG,
     midiToNoteNameNoOctave,
@@ -30,7 +20,7 @@
   import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
-  import BpmSettings from "$lib/components/BpmSettings.svelte";
+  import PlaybackControls from "$lib/components/PlaybackControls.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -677,88 +667,34 @@
     <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
   {/if}
   {#if allNotes.length > 0}
-    <!-- Playback Controls & Slider -->
-    <div
-      class="flex items-center justify-center gap-4 text-white"
-      class:mt-4={!fullscreen.isActive}
-      bind:this={controlsDiv}
-    >
-      {#if midiFile}
-        <div class="mt-4 flex items-center gap-x-1.5">
-          <Button
-            class={cn("", {
-              "bg-green-500 hover:bg-green-600":
-                !isPlaying || currentTime >= totalDuration,
-              "bg-yellow-500 hover:bg-yellow-600": isPlaying && !isPaused,
-              "bg-blue-500 hover:bg-blue-600": isPlaying && isPaused,
-            })}
-            size="icon-sm"
-            onclick={handlePlayButtonClick}
-          >
-            {#if !isPlaying || currentTime >= totalDuration}
-              <IconPlayerPlay />
-            {:else if isPlaying && !isPaused}
-              <IconPlayerPause />
-            {:else}
-              <IconPlayerResume />
-            {/if}
-          </Button>
-          <Button
-            class="bg-purple-500 hover:bg-purple-600"
-            size="icon-sm"
-            disabled={!midiFile || currentTime <= 0}
-            onmouseup={seekBackward}
-          >
-            <IconPlayerSkipBack />
-          </Button>
-          <Button
-            class="bg-purple-500 hover:bg-purple-600"
-            size="icon-sm"
-            disabled={!midiFile || currentTime >= totalDuration}
-            onmouseup={seekForward}
-          >
-            <IconPlayerSkipForward />
-          </Button>
-          <BpmSettings
-            originalBpm={originalBPM}
-            size="icon-sm"
-            {userBPM}
-            {speedPercent}
-            {incrementSpeed}
-            {decrementSpeed}
-            {resetSpeed}
-            {applySpeed}
-          />
-          <Button
-            size="icon-sm"
-            disabled={!midiFile}
-            onclick={toggleFullscreen}
-          >
-            <IconMaximize />
-          </Button>
-          <Button
-            class="bg-orange-500 hover:bg-orange-600"
-            size="icon-sm"
-            onclick={() => (showModal = true)}
-          >
-            <IconSettings />
-          </Button>
-        </div>
-      {/if}
-      <div class="mt-4 flex w-full items-center gap-4 text-white">
-        <span>{currentTimeFormatted}</span>
-        <Slider
-          value={currentTime}
-          max={totalDuration}
-          onpointerdown={handleSliderPointerDown}
-          oninput={handleSliderInput}
-          onpointerup={handleSliderPointerUp}
-          onchange={handleSliderPointerUp}
-        />
-        <span>{totalDurationFormatted}</span>
-      </div>
-    </div>
+    <PlaybackControls
+      bind:controlsDiv
+      {fullscreen}
+      {midiFile}
+      {isPlaying}
+      {isPaused}
+      {currentTime}
+      {totalDuration}
+      {handlePlayButtonClick}
+      {seekBackward}
+      {seekForward}
+      {originalBPM}
+      {userBPM}
+      {speedPercent}
+      {incrementSpeed}
+      {decrementSpeed}
+      {resetSpeed}
+      {applySpeed}
+      {toggleFullscreen}
+      bind:showModal
+      {currentTimeFormatted}
+      {totalDurationFormatted}
+      {handleSliderPointerDown}
+      {handleSliderInput}
+      {handleSliderPointerUp}
+    />
   {/if}
+
   <div
     class={fullscreen.isActive
       ? "flex-1 overflow-hidden bg-black"
