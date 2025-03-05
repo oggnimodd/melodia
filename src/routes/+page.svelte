@@ -22,6 +22,7 @@
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import PlaybackControls from "$lib/components/PlaybackControls.svelte";
   import { useResizeObserver } from "$lib/hooks/useResizeObserver.svelte";
+  import FpsCounter from "$lib/components/FpsCounter.svelte";
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -714,8 +715,5 @@
   }}
   setAudioVisualOffset={(val) => (audioVisualOffset = val)}
 />
-<div
-  class="pointer-events-none fixed right-2 top-2 z-50 rounded bg-gray-800 bg-opacity-75 px-2 py-1 text-sm text-white"
->
-  FPS: {fps.toFixed(1)}
-</div>
+
+<FpsCounter {fps} />
