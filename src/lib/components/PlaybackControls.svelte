@@ -119,15 +119,16 @@
 <!-- Playback controls container -->
 <div
   class={cn(
-    "flex items-center justify-center gap-4 text-white",
-    fullscreen.isActive && "bg-black pb-2"
+    "flex items-center gap-4 text-white",
+    fullscreen.isActive && "bg-black px-3 pb-3 pt-3",
+    !fullscreen.isActive && "flex-wrap md:flex-nowrap"
   )}
   class:mt-4={!fullscreen.isActive}
   bind:this={controlsDiv}
 >
   {#if midiFile}
     <!-- Playback buttons and BPM controls -->
-    <div class="mt-4 flex items-center gap-x-1.5">
+    <div class="flex items-center gap-x-1.5">
       <Button
         class={cn("", {
           "bg-green-500 hover:bg-green-600":
@@ -186,7 +187,7 @@
     </div>
   {/if}
   <!-- Slider for playback progress -->
-  <div class="mt-4 flex w-full items-center gap-4 text-white">
+  <div class="flex w-full items-center gap-4 text-white">
     <span>{currentTimeFormatted}</span>
     <Slider
       value={currentTime}
