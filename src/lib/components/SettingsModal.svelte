@@ -1,7 +1,10 @@
-<!-- SettingsModal.svelte -->
 <script lang="ts">
+  import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import { Label } from "$lib/components/ui/label/index.js";
   import Button from "$lib/components/ui/button/button.svelte";
   import Slider from "$lib/components/ui/slider/slider.svelte";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
+  import * as Tabs from "$lib/components/ui/tabs/index.js";
 
   // Define the prop types
   interface SettingsModalProps {
@@ -14,7 +17,7 @@
     /** Whether to show note labels on piano keys */
     showLabels: boolean;
 
-    /** Callback: invoked when user clicks 'Close' */
+    /** Callback: invoked when user clicks 'Close' or closes the modal */
     onClose?: () => void;
 
     /** Callback: invoked when user clicks 'Reset' in Calibration tab */
@@ -37,104 +40,90 @@
     setShowLabels,
     setAudioVisualOffset,
   }: SettingsModalProps = $props();
-
-  // Active tab in the settings modal
-  let activeTab = $state<"calibration" | "piano">("calibration");
-
-  function handleClose() {
-    onClose?.();
-  }
-
-  function handleTabChange(tab: "calibration" | "piano") {
-    activeTab = tab;
-  }
 </script>
 
-<!-- Modal overlay, only visible when showModal is true -->
-<div
-  class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-  style="display: {showModal ? 'flex' : 'none'}"
+<Dialog.Root
+  open={showModal}
+  onOpenChange={(open) => {
+    if (!open) onClose?.();
+  }}
 >
-  <!-- Modal content container -->
-  <div class="w-96 rounded-lg bg-gray-800 p-6">
-    <h2 class="mb-4 text-xl font-semibold text-white">Settings</h2>
-
-    <div class="flex">
-      <!-- Left side (tabs) -->
-      <div class="mr-4 w-1/3 border-r border-gray-700">
-        <div class="flex flex-col">
-          <button
-            class="px-3 py-2 text-left text-white hover:bg-gray-700"
-            class:font-bold={activeTab === "calibration"}
-            onclick={() => handleTabChange("calibration")}
-          >
-            Calibration
-          </button>
-          <button
-            class="px-3 py-2 text-left text-white hover:bg-gray-700"
-            class:font-bold={activeTab === "piano"}
-            onclick={() => handleTabChange("piano")}
-          >
-            Piano Config
-          </button>
-        </div>
-      </div>
-
-      <!-- Right side (tab content) -->
-      <div class="flex-1 px-4">
-        {#if activeTab === "calibration"}
-          <!-- Calibration Tab -->
-          <p class="mb-4 text-sm text-gray-300">
-            Adjust the slider so visuals match the piano sound.
-            <strong>
-              If the visuals are too fast (you hear the audio first), slide
-              right. If they're too slow, slide left.
-            </strong>
-          </p>
-
-          <div class="mb-2 flex items-center gap-2">
-            <span class="text-sm text-white">
-              Offset: {audioVisualOffset.toFixed(2)}s
-            </span>
-          </div>
-
-          <Slider
-            value={audioVisualOffset}
-            min={-0.5}
-            max={0.5}
-            step={0.01}
-            oninput={(e: Event) => {
-              const val = parseFloat((e.target as HTMLInputElement).value);
-              setAudioVisualOffset?.(val);
-            }}
-          />
-
-          <div class="mt-4 flex justify-end gap-2">
-            <!-- Reset offset button -->
-            <Button size="sm" onclick={() => onResetOffset?.()}>Reset</Button>
-          </div>
-        {:else if activeTab === "piano"}
-          <!-- Piano Config Tab -->
-          <p class="mb-4 text-sm text-gray-300">Piano Display Settings</p>
-
-          <label class="flex items-center gap-2 text-white">
-            <input
-              type="checkbox"
-              checked={showLabels}
+  <Dialog.Portal>
+    <Dialog.Overlay />
+    <Dialog.Content
+      class="mx-auto my-4 max-h-[80vh] max-w-full overflow-y-auto rounded-xl bg-background p-6 shadow-lg md:max-w-xl"
+    >
+      <Dialog.Header>
+        <Dialog.Title class="text-2xl font-bold text-foreground">
+          Settings
+        </Dialog.Title>
+      </Dialog.Header>
+      <div class="flex flex-col">
+        <Tabs.Root value="calibration" class="w-full">
+          <Tabs.List class="border-b">
+            <Tabs.Trigger
+              value="calibration"
+              class="px-4 py-2 hover:bg-secondary/10"
+            >
+              Calibration
+            </Tabs.Trigger>
+            <Tabs.Trigger value="piano" class="px-4 py-2 hover:bg-secondary/10">
+              Piano Config
+            </Tabs.Trigger>
+          </Tabs.List>
+          <Tabs.Content value="calibration" class="pt-4">
+            <p class="mb-4 text-sm text-foreground/80">
+              Adjust the slider so visuals match the piano sound.
+              <strong>
+                If the visuals are too fast (you hear the audio first), slide
+                right. If they're too slow, slide left.
+              </strong>
+            </p>
+            <div class="mb-2 flex items-center gap-2 font-semibold">
+              <span class="text-sm text-foreground">
+                Offset: {audioVisualOffset.toFixed(2)}s
+              </span>
+            </div>
+            <Slider
+              value={audioVisualOffset}
+              min={-0.5}
+              max={0.5}
+              step={0.01}
               oninput={(e: Event) => {
-                const checked = (e.target as HTMLInputElement).checked;
-                setShowLabels?.(checked);
+                const val = parseFloat((e.target as HTMLInputElement).value);
+                setAudioVisualOffset?.(val);
               }}
             />
-            Show Note Labels
-          </label>
-        {/if}
+            <div class="mt-4 flex gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                onclick={() => onResetOffset?.()}
+              >
+                Reset
+              </Button>
+            </div>
+          </Tabs.Content>
+          <Tabs.Content value="piano" class="pt-4">
+            <div class="flex items-center gap-2">
+              <Checkbox
+                id="show-label"
+                onCheckedChange={(checked) => {
+                  setShowLabels?.(checked);
+                }}
+                checked={showLabels}
+                aria-labelledby="show-label"
+              />
+              <Label for="show-label">Show Note Labels</Label>
+            </div>
+          </Tabs.Content>
+        </Tabs.Root>
       </div>
-    </div>
-
-    <!-- Bottom row (Close button) -->
-    <div class="mt-4 flex justify-end gap-2">
-      <Button size="sm" onclick={handleClose}>Close</Button>
-    </div>
-  </div>
-</div>
+      <Dialog.Footer class="mt-6 flex justify-end">
+        <Dialog.Close>
+          <Button size="sm">Close</Button>
+        </Dialog.Close>
+      </Dialog.Footer>
+    </Dialog.Content>
+  </Dialog.Portal>
+</Dialog.Root>
