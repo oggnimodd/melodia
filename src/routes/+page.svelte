@@ -521,7 +521,6 @@
   useResizeObserver({
     element: () => containerDiv,
     onResize: () => {
-      console.log("here");
       initCanvas();
       drawAll();
     },
