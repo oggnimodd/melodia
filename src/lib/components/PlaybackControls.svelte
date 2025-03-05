@@ -118,7 +118,10 @@
 
 <!-- Playback controls container -->
 <div
-  class="flex items-center justify-center gap-4 text-white"
+  class={cn(
+    "flex items-center justify-center gap-4 text-white",
+    fullscreen.isActive && "bg-black pb-2"
+  )}
   class:mt-4={!fullscreen.isActive}
   bind:this={controlsDiv}
 >
