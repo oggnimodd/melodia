@@ -66,8 +66,6 @@
 
   // Misc state
   let showModal = $state(false);
-  let showLabels = $state(true);
-  let audioVisualOffset = $state(-0.1);
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDuration = $derived(midiData?.totalDuration || 0);
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
@@ -104,9 +102,11 @@
   function updateActiveNotes() {
     activeNotes.clear();
     cachedActiveMidiTracks.clear();
+    // Use the offset from your PianoRoll instance
+    const offset = pianoRoll.audioVisualOffset;
     for (const note of allNotes) {
-      const activationTime = note.time + audioVisualOffset;
-      const deactivationTime = note.time + note.duration + audioVisualOffset;
+      const activationTime = note.time + offset;
+      const deactivationTime = note.time + note.duration + offset;
       if (currentTime >= activationTime && currentTime <= deactivationTime) {
         activeNotes.add(note.id);
         cachedActiveMidiTracks.set(note.midi, note.track);
