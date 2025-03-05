@@ -1,3 +1,4 @@
+// Renderer.svelte.ts
 import {
   CONFIG,
   midiToNoteNameNoOctave,
@@ -11,8 +12,6 @@ import type { Notes } from "$lib/models/midi";
 import { SvelteMap } from "svelte/reactivity";
 
 export interface PianoRollOptions {
-  showLabels?: boolean;
-  audioVisualOffset?: number;
   minMidi?: number;
   maxMidi?: number;
 }
@@ -20,71 +19,72 @@ export interface PianoRollOptions {
 export interface PianoRollInitOptions {
   fullscreen: boolean;
   controlsDiv: HTMLDivElement | null;
-  actualMinMidi?: number;
-  actualMaxMidi?: number;
 }
 
+const DEFAULT_VISUAL_OFFSET = -0.1;
+const DEFAULT_SHOW_LABELS = true;
+
 export class PianoRoll {
-  // Reactive DOM element references
+  // Configuration options available immediately.
+  showLabels = $state(DEFAULT_SHOW_LABELS);
+  audioVisualOffset = $state(DEFAULT_VISUAL_OFFSET);
+  minMidi = $state(24);
+  maxMidi = $state(108);
+
+  // DOM-dependent properties (set later in onMount).
   canvas: HTMLCanvasElement | null = $state(null);
   containerDiv: HTMLDivElement | null = $state(null);
   ctx: CanvasRenderingContext2D | null = $state(null);
 
-  // Reactive state variables
+  // Internal layout and note state.
   scale = $state(1);
   leftOffset = $state(0);
   canvasCssWidth = $state(0);
   canvasCssHeight = $state(0);
-  showLabels = $state(true);
-  audioVisualOffset = $state(-0.1);
-  allNotes: Notes = $state([]);
-  minMidi = $state(24);
-  maxMidi = $state(108);
+  allNotes: Notes = $state([]); // Assume an array of note objects.
 
-  // Caches using SvelteMap for reactivity
   keyCache = new SvelteMap<number, { x: number; w: number }>();
   activeMidiTracks = new SvelteMap<number, number>();
 
-  constructor({
-    canvas,
-    containerDiv,
-    options,
-  }: {
-    canvas: HTMLCanvasElement;
-    containerDiv: HTMLDivElement;
-    options?: PianoRollOptions;
-  }) {
-    this.canvas = canvas;
-    this.containerDiv = containerDiv;
-    if (options?.showLabels !== undefined) this.showLabels = options.showLabels;
-    if (options?.audioVisualOffset !== undefined)
-      this.audioVisualOffset = options.audioVisualOffset;
-    if (options?.minMidi !== undefined) this.minMidi = options.minMidi;
-    if (options?.maxMidi !== undefined) this.maxMidi = options.maxMidi;
+  constructor(options: PianoRollOptions = {}) {
+    this.minMidi = options.minMidi ?? this.minMidi;
+    this.maxMidi = options.maxMidi ?? this.maxMidi;
   }
 
+  /**
+   * Set the canvas and container elements once they are available.
+   */
+  setElements(params: {
+    canvas: HTMLCanvasElement;
+    containerDiv: HTMLDivElement;
+  }) {
+    this.canvas = params.canvas;
+    this.containerDiv = params.containerDiv;
+  }
+
+  /**
+   * Initialize the canvas layout. This must be called after the DOM elements are set.
+   */
   initCanvas({ fullscreen, controlsDiv }: PianoRollInitOptions) {
     if (!this.containerDiv || !this.canvas) return;
 
-    // Get container dimensions
     const containerHeight = this.containerDiv.offsetHeight;
     const containerWidth = this.containerDiv.offsetWidth;
-    let finalWidth = containerWidth;
+    const finalWidth = containerWidth;
     let finalHeight = fullscreen
       ? containerHeight - (controlsDiv?.offsetHeight || 0)
       : window.innerHeight * 0.7;
     if (finalHeight < 0) finalHeight = containerHeight;
 
-    // Set canvas dimensions based on device pixel ratio
+    // Set canvas dimensions based on device pixel ratio.
     const dpr = window.devicePixelRatio || 1;
     this.canvasCssWidth = finalWidth;
     this.canvasCssHeight = finalHeight;
     this.canvas.width = finalWidth * dpr;
     this.canvas.height = finalHeight * dpr;
-    this.canvas.style.width = finalWidth + "px";
-    this.canvas.style.height = finalHeight + "px";
+    this.canvas.style.width = `${finalWidth}px`;
+    this.canvas.style.height = `${finalHeight}px`;
 
-    // Get the 2D context and scale it for high-DPI screens
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
@@ -92,7 +92,7 @@ export class PianoRoll {
     this.ctx = ctx;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
 
-    // If we have notes, recalc the note range and layout parameters
+    // Recalculate note layout if we have note data.
     if (this.allNotes.length > 0) {
       const actualMinMidi = Math.min(...this.allNotes.map((n) => n.midi));
       const actualMaxMidi = Math.max(...this.allNotes.map((n) => n.midi));
@@ -117,8 +117,6 @@ export class PianoRoll {
       const maxOffset = getLayoutOffsetRaw(newMaxMidi);
       this.scale = finalWidth / (maxOffset - this.leftOffset);
     }
-
-    // Update the key positions cache
     this.updateKeyCache();
   }
 
@@ -130,6 +128,22 @@ export class PianoRoll {
         w: getKeyWidth(midi, this.scale),
       });
     }
+  }
+
+  setAudioVisualOffset(val: number) {
+    this.audioVisualOffset = val;
+  }
+
+  setShowLabels(val: boolean) {
+    this.showLabels = val;
+  }
+
+  resetAudioVisualOffset() {
+    this.audioVisualOffset = DEFAULT_VISUAL_OFFSET;
+  }
+
+  resetShowLabels() {
+    this.showLabels = DEFAULT_SHOW_LABELS;
   }
 
   drawPianoKeys() {
@@ -144,7 +158,7 @@ export class PianoRoll {
       Math.ceil((this.leftOffset + totalWidthUnits) / 7) * 12
     );
 
-    // Draw white keys
+    // Draw white keys.
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
       const key = this.keyCache.get(midi);
@@ -161,7 +175,7 @@ export class PianoRoll {
       c.strokeRect(x, startY, w, pianoHeight);
     }
 
-    // Draw black keys
+    // Draw black keys.
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
       const key = this.keyCache.get(midi);
@@ -177,11 +191,11 @@ export class PianoRoll {
       c.fillRect(x, startY, w, h);
     }
 
-    // Optionally, draw labels on white keys
+    // Optionally, draw labels.
     if (this.showLabels) {
       c.fillStyle = CONFIG.fontColor;
       const keyFontSize = pianoHeight * 0.15;
-      c.font = "500 " + keyFontSize + "px sans-serif";
+      c.font = `500 ${keyFontSize}px sans-serif`;
       c.textAlign = "center";
       c.textBaseline = "middle";
       const keyYOffset = pianoHeight * 0.11;

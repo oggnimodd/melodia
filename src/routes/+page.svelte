@@ -15,7 +15,6 @@
   import { PianoRoll } from "$lib/features/piano-roll";
   import { CONFIG, createSalamanderPiano } from "$lib/utils/piano";
 
-  // DOM element references using $state()
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
@@ -36,7 +35,6 @@
   let speedPercent = $state(100);
   let userBPM = $state(120);
 
-  // Helper functions for BPM conversion
   function musicalToRealTime(musicalTime: number): number {
     return musicalTime * (originalBPM / userBPM);
   }
@@ -66,7 +64,7 @@
     applySpeed(100);
   }
 
-  // Misc. state
+  // Misc state
   let showModal = $state(false);
   let showLabels = $state(true);
   let audioVisualOffset = $state(-0.1);
@@ -91,14 +89,18 @@
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
-  // Create reactive sets/maps for active notes and MIDI tracks
+  // Reactive sets for active notes and cached MIDI tracks
   let activeNotes = new SvelteSet<number>();
   let cachedActiveMidiTracks = new SvelteMap<number, number>();
 
-  // PianoRoll instance
-  let pianoRoll: PianoRoll;
+  // PianoRoll instance (initialized in onMount)
+  let pianoRoll = $state(
+    new PianoRoll({
+      minMidi: 24,
+      maxMidi: 108,
+    })
+  );
 
-  // Update active notes and update pianoRoll active MIDI tracks
   function updateActiveNotes() {
     activeNotes.clear();
     cachedActiveMidiTracks.clear();
@@ -115,12 +117,10 @@
     }
   }
 
-  // Wrapper for drawing using the PianoRoll instance
   function drawPianoRoll() {
     if (pianoRoll) pianoRoll.drawAll(currentTime);
   }
 
-  // Animation loop for updating time and redrawing the canvas
   function animate() {
     if (!isPlaying || !pianoRoll) return;
     const nowPerf = performance.now();
@@ -142,7 +142,6 @@
     animationFrameId = requestAnimationFrame(animate);
   }
 
-  // File change handler for loading and parsing MIDI files
   async function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -152,7 +151,6 @@
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
-
       const data = await parseMidiFile(midiFile);
       midiData = data;
       let noteIdCounter = 0;
@@ -173,16 +171,11 @@
       newNotes.sort((a, b) => a.time - b.time);
       allNotes = newNotes;
       if (allNotes.length > 0) {
-        // Update PianoRoll's note data and reinitialize canvas dimensions based on note ranges
         pianoRoll.allNotes = allNotes;
         const trackMin = Math.min(...allNotes.map((n) => n.midi));
         const trackMax = Math.max(...allNotes.map((n) => n.midi));
-        pianoRoll.initCanvas({
-          fullscreen: fullscreen.isActive,
-          controlsDiv,
-          actualMinMidi: trackMin,
-          actualMaxMidi: trackMax,
-        });
+        // Reinitialize canvas with updated note ranges.
+        pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
       }
       originalBPM =
         data.header?.tempos && data.header.tempos.length > 0
@@ -199,7 +192,6 @@
     showModal = false;
   }
 
-  // Playback control functions
   async function playMidi() {
     if (!allNotes.length) return;
     isPlaying = true;
@@ -429,7 +421,6 @@
     drawPianoRoll();
   }
 
-  // Update swipe factor based on canvas height
   function updateSwipeFactor() {
     if (pianoRoll) {
       const pianoTopY =
@@ -452,17 +443,8 @@
   onMount(() => {
     if (browser) {
       if (containerDiv && canvas) {
-        pianoRoll = new PianoRoll({
-          canvas,
-          containerDiv,
-          options: { showLabels, audioVisualOffset },
-        });
-        pianoRoll.initCanvas({
-          fullscreen: fullscreen.isActive,
-          controlsDiv,
-          actualMinMidi: 24,
-          actualMaxMidi: 108,
-        });
+        pianoRoll.setElements({ canvas, containerDiv });
+        pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
       }
       const ctx = new Tone.Context({
         latencyHint: "interactive",
@@ -477,7 +459,6 @@
       })();
     }
   });
-
   onDestroy(() => {
     if (!browser) return;
     if (pianoSampler) pianoSampler.dispose();
@@ -542,18 +523,23 @@
     ></canvas>
   </div>
 </div>
+
 <SettingsModal
   {showModal}
-  {audioVisualOffset}
-  {showLabels}
+  audioVisualOffset={pianoRoll.audioVisualOffset}
+  showLabels={pianoRoll.showLabels}
   onClose={handleCloseModal}
   onResetOffset={() => {
-    audioVisualOffset = -0.1;
+    pianoRoll.resetAudioVisualOffset();
+    drawPianoRoll();
   }}
   setShowLabels={(val) => {
-    showLabels = val;
+    pianoRoll.setShowLabels(val);
     (!isPlaying || isPaused) && drawPianoRoll();
   }}
-  setAudioVisualOffset={(val) => (audioVisualOffset = val)}
+  setAudioVisualOffset={(val) => {
+    pianoRoll.setAudioVisualOffset(val);
+    drawPianoRoll();
+  }}
 />
 <FpsCounter {fps} />
