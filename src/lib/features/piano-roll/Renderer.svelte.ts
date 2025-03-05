@@ -24,14 +24,19 @@ export interface PianoRollInitOptions {
 const DEFAULT_VISUAL_OFFSET = -0.1;
 const DEFAULT_SHOW_LABELS = true;
 const DEFAULT_VISIBLE_SECONDS = 4;
+const DEFAULT_SHOW_OCTAVE_LINES = true;
 
 export class PianoRoll {
   // Configuration options available immediately.
   showLabels = $state(DEFAULT_SHOW_LABELS);
+  showOctaveLines = $state(DEFAULT_SHOW_OCTAVE_LINES);
   audioVisualOffset = $state(DEFAULT_VISUAL_OFFSET);
   visibleSeconds = $state(DEFAULT_VISIBLE_SECONDS);
   minMidi = $state(24);
   maxMidi = $state(108);
+  // Customizable octave line properties
+  octaveLineColor = $state("#ffffff");
+  octaveLineWidth = $state(1);
 
   // DOM-dependent properties (set later in onMount).
   canvas: HTMLCanvasElement | null = $state(null);
@@ -43,8 +48,8 @@ export class PianoRoll {
   leftOffset = $state(0);
   canvasCssWidth = $state(0);
   canvasCssHeight = $state(0);
-  allNotes: Notes = $state([]); // Assume an array of note objects.
-
+  allNotes: Notes = $state([]);
+  // Assume an array of note objects.
   keyCache = new SvelteMap<number, { x: number; w: number }>();
   activeMidiTracks = new SvelteMap<number, number>();
 
@@ -69,7 +74,6 @@ export class PianoRoll {
    */
   initCanvas({ fullscreen, controlsDiv }: PianoRollInitOptions) {
     if (!this.containerDiv || !this.canvas) return;
-
     const containerHeight = this.containerDiv.offsetHeight;
     const containerWidth = this.containerDiv.offsetWidth;
     const finalWidth = containerWidth;
@@ -77,7 +81,6 @@ export class PianoRoll {
       ? containerHeight - (controlsDiv?.offsetHeight || 0)
       : window.innerHeight * 0.7;
     if (finalHeight < 0) finalHeight = containerHeight;
-
     // Set canvas dimensions based on device pixel ratio.
     const dpr = window.devicePixelRatio || 1;
     this.canvasCssWidth = finalWidth;
@@ -86,14 +89,12 @@ export class PianoRoll {
     this.canvas.height = finalHeight * dpr;
     this.canvas.style.width = `${finalWidth}px`;
     this.canvas.style.height = `${finalHeight}px`;
-
     const ctx = this.canvas.getContext("2d");
     if (!ctx) return;
     ctx.scale(dpr, dpr);
     ctx.imageSmoothingEnabled = false;
     this.ctx = ctx;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
-
     // Recalculate note layout if we have note data.
     if (this.allNotes.length > 0) {
       const actualMinMidi = Math.min(...this.allNotes.map((n) => n.midi));
@@ -140,6 +141,10 @@ export class PianoRoll {
     this.showLabels = val;
   }
 
+  setShowOctaveLines(val: boolean) {
+    this.showOctaveLines = val;
+  }
+
   setVisibleSeconds(val: number) {
     this.visibleSeconds = val;
   }
@@ -167,7 +172,6 @@ export class PianoRoll {
       127,
       Math.ceil((this.leftOffset + totalWidthUnits) / 7) * 12
     );
-
     // Draw white keys.
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (isBlackKey(midi)) continue;
@@ -184,7 +188,6 @@ export class PianoRoll {
       c.strokeStyle = "#000";
       c.strokeRect(x, startY, w, pianoHeight);
     }
-
     // Draw black keys.
     for (let midi = renderedMinMidi; midi <= renderedMaxMidi; midi++) {
       if (!isBlackKey(midi)) continue;
@@ -200,7 +203,6 @@ export class PianoRoll {
       c.fillStyle = fillColor;
       c.fillRect(x, startY, w, h);
     }
-
     // Optionally, draw labels.
     if (this.showLabels) {
       c.fillStyle = CONFIG.fontColor;
@@ -274,10 +276,31 @@ export class PianoRoll {
     }
   }
 
+  drawOctaveLines() {
+    if (!this.ctx) return;
+    if (!this.showOctaveLines) return;
+    this.ctx.save();
+    this.ctx.strokeStyle = this.octaveLineColor;
+    this.ctx.lineWidth = this.octaveLineWidth;
+    // Draw vertical lines at every C note (MIDI % 12 === 0)
+    for (let midi = 0; midi <= 127; midi += 12) {
+      const key = this.keyCache.get(midi);
+      if (!key) continue;
+      const x = key.x;
+      if (x < 0 || x > this.canvasCssWidth) continue;
+      this.ctx.beginPath();
+      this.ctx.moveTo(x, 0);
+      this.ctx.lineTo(x, this.canvasCssHeight);
+      this.ctx.stroke();
+    }
+    this.ctx.restore();
+  }
+
   drawAll(currentTime: number) {
     if (!this.ctx) return;
     this.ctx.clearRect(0, 0, this.canvasCssWidth, this.canvasCssHeight);
     if (!this.allNotes.length) return;
+    this.drawOctaveLines();
     this.drawNotes(currentTime);
     this.drawPianoKeys();
   }

@@ -138,12 +138,18 @@
                 class="justify-start"
                 value={String(visibleSeconds)}
                 onValueChange={(value) => {
-                  setVisibleSeconds?.(Number(value));
+                  value &&
+                    visibleSecondsOptions.includes(Number(value)) &&
+                    setVisibleSeconds?.(Number(value));
                 }}
               >
                 <!-- Loop for toggle group items -->
                 {#each visibleSecondsOptions as option}
-                  <ToggleGroup.Item value={String(option)}>
+                  <ToggleGroup.Item
+                    disabled={Number(option) === visibleSeconds}
+                    value={String(option)}
+                    class="!text-white !opacity-100"
+                  >
                     {option}
                   </ToggleGroup.Item>
                 {/each}
