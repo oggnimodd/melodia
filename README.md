@@ -12,7 +12,7 @@
        Replace the current modal with shadcn's version.
 - [x] **Set Visible Seconds Option**  
        In the settings overlay, allow users to choose visible seconds (options: 2, 3, 4, 5, 6).
-- [ ] **Display Octave Line Option**  
+- [x] **Display Octave Line Option**  
        Add an option for users to toggle the octave line.
 - [x] **FPS Counter in Development Only**  
        Show the FPS counter only when in development mode.
