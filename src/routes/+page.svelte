@@ -110,14 +110,14 @@
     applySpeed(100);
   }
 
-  // --- Other Functions (unchanged unless noted) ---
   function handleResetOffset() {
     audioVisualOffset = -0.1;
   }
   function handleCloseModal() {
     showModal = false;
   }
-  function handleFileChange(e: Event) {
+
+  async function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       if (isPlaying) haltPlayback();
@@ -126,8 +126,48 @@
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
+
+      // Parse the MIDI file immediately
+      const data = await parseMidiFile(midiFile);
+      midiData = data;
+      let noteIdCounter = 0;
+      const newNotes: Notes = [];
+      data.tracks.forEach((track, trackIndex) => {
+        track.notes.forEach((note) => {
+          newNotes.push({
+            id: noteIdCounter++,
+            time: note.time,
+            duration: note.duration,
+            midi: note.midi,
+            name: note.name,
+            track: trackIndex,
+            velocity: note.velocity,
+          });
+        });
+      });
+      newNotes.sort((a, b) => a.time - b.time);
+      allNotes = newNotes;
+
+      if (allNotes.length > 0) {
+        let trackMin = Math.min(...allNotes.map((n) => n.midi));
+        let trackMax = Math.max(...allNotes.map((n) => n.midi));
+        minMidi = trackMin;
+        maxMidi = trackMax;
+        minOffset = getLayoutOffsetRaw(minMidi);
+        maxOffset = getLayoutOffsetRaw(maxMidi);
+      }
+      originalBPM =
+        data.header?.tempos && data.header.tempos.length > 0
+          ? data.header.tempos[0].bpm
+          : 120;
+      speedPercent = 100;
+      userBPM = originalBPM;
+      Tone.getTransport().bpm.value = userBPM;
+      initCanvas();
+      drawAll();
     }
   }
+
   function initCanvas() {
     if (!containerDiv || !canvas) return;
     const containerHeight = containerDiv.offsetHeight;
@@ -475,66 +515,12 @@
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
 
-  // --- Process MIDI File & Set BPM ---
-  $effect(() => {
-    if (!midiFile) return;
-    (async () => {
-      const data = await parseMidiFile(midiFile);
-      midiData = data;
-      let noteIdCounter = 0;
-      const newNotes: Notes = [];
-      data.tracks.forEach((track, trackIndex) => {
-        track.notes.forEach((note) => {
-          newNotes.push({
-            id: noteIdCounter++,
-            time: note.time,
-            duration: note.duration,
-            midi: note.midi,
-            name: note.name,
-            track: trackIndex,
-            velocity: note.velocity,
-          });
-        });
-      });
-      newNotes.sort((a, b) => a.time - b.time);
-      allNotes = newNotes;
-      if (allNotes.length > 0) {
-        let trackMin = Math.min(...allNotes.map((n) => n.midi));
-        let trackMax = Math.max(...allNotes.map((n) => n.midi));
-        minMidi = trackMin;
-        maxMidi = trackMax;
-        minOffset = getLayoutOffsetRaw(minMidi);
-        maxOffset = getLayoutOffsetRaw(maxMidi);
-      }
-      if (data.header?.tempos && data.header.tempos.length > 0) {
-        originalBPM = data.header.tempos[0].bpm;
-      } else {
-        originalBPM = 120;
-      }
-      speedPercent = 100;
-      userBPM = originalBPM;
-      Tone.getTransport().bpm.value = userBPM;
-      initCanvas();
-      drawAll();
-    })();
-  });
-
   useResizeObserver({
     element: () => containerDiv,
     onResize: () => {
       initCanvas();
       drawAll();
     },
-  });
-
-  onDestroy(() => {
-    if (!browser) return;
-    if (pianoSampler) pianoSampler.dispose();
-    if (animationFrameId) cancelAnimationFrame(animationFrameId);
-    const transport = Tone.getTransport();
-    transport.stop();
-    transport.cancel(0);
-    isPlaying = false;
   });
 
   function handleCanvasPointerDown(e: PointerEvent) {
@@ -645,6 +631,16 @@
         console.log("Sampler preloaded");
       })();
     }
+  });
+
+  onDestroy(() => {
+    if (!browser) return;
+    if (pianoSampler) pianoSampler.dispose();
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    const transport = Tone.getTransport();
+    transport.stop();
+    transport.cancel(0);
+    isPlaying = false;
   });
 </script>
 
