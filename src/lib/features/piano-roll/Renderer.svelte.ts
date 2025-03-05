@@ -23,11 +23,13 @@ export interface PianoRollInitOptions {
 
 const DEFAULT_VISUAL_OFFSET = -0.1;
 const DEFAULT_SHOW_LABELS = true;
+const DEFAULT_VISIBLE_SECONDS = 4;
 
 export class PianoRoll {
   // Configuration options available immediately.
   showLabels = $state(DEFAULT_SHOW_LABELS);
   audioVisualOffset = $state(DEFAULT_VISUAL_OFFSET);
+  visibleSeconds = $state(DEFAULT_VISIBLE_SECONDS);
   minMidi = $state(24);
   maxMidi = $state(108);
 
@@ -138,12 +140,20 @@ export class PianoRoll {
     this.showLabels = val;
   }
 
+  setVisibleSeconds(val: number) {
+    this.visibleSeconds = val;
+  }
+
   resetAudioVisualOffset() {
     this.audioVisualOffset = DEFAULT_VISUAL_OFFSET;
   }
 
   resetShowLabels() {
     this.showLabels = DEFAULT_SHOW_LABELS;
+  }
+
+  resetVisibleSeconds() {
+    this.visibleSeconds = DEFAULT_VISIBLE_SECONDS;
   }
 
   drawPianoKeys() {
@@ -218,9 +228,9 @@ export class PianoRoll {
     const c = this.ctx;
     const pianoTopY =
       this.canvasCssHeight - this.canvasCssHeight * CONFIG.pianoHeightRatio;
-    const speed = pianoTopY / CONFIG.visibleSeconds;
-    const visibleStart = currentTime - CONFIG.visibleSeconds;
-    const visibleEnd = currentTime + CONFIG.visibleSeconds;
+    const speed = pianoTopY / this.visibleSeconds;
+    const visibleStart = currentTime - this.visibleSeconds;
+    const visibleEnd = currentTime + this.visibleSeconds;
     const startIdx = this.allNotes.findIndex(
       (n) => n.time + this.audioVisualOffset + n.duration >= visibleStart
     );
@@ -229,7 +239,7 @@ export class PianoRoll {
       const note = this.allNotes[i];
       if (note.time + this.audioVisualOffset > visibleEnd) break;
       const appearTime =
-        note.time + this.audioVisualOffset - CONFIG.visibleSeconds;
+        note.time + this.audioVisualOffset - this.visibleSeconds;
       const timeSinceAppear = currentTime - appearTime;
       const bottomY = timeSinceAppear * speed;
       const noteHeight = note.duration * speed;

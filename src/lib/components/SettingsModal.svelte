@@ -5,6 +5,7 @@
   import Slider from "$lib/components/ui/slider/slider.svelte";
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
 
   // Define the prop types
   interface SettingsModalProps {
@@ -17,6 +18,9 @@
     /** Whether to show note labels on piano keys */
     showLabels: boolean;
 
+    /** How many seconds should be displayed in the piano roll */
+    visibleSeconds: number;
+
     /** Callback: invoked when user clicks 'Close' or closes the modal */
     onClose?: () => void;
 
@@ -28,6 +32,9 @@
 
     /** Callback: invoked to change the audio-visual offset value */
     setAudioVisualOffset?: (val: number) => void;
+
+    /** Callback: invoked to change the visible seconds value */
+    setVisibleSeconds?: (val: number) => void;
   }
 
   // Destructure props (Svelte 5)
@@ -35,11 +42,15 @@
     showModal,
     audioVisualOffset,
     showLabels,
+    visibleSeconds,
     onClose,
     onResetOffset,
     setShowLabels,
     setAudioVisualOffset,
+    setVisibleSeconds,
   }: SettingsModalProps = $props();
+
+  const visibleSecondsOptions = [2, 3, 4, 5, 6];
 </script>
 
 <Dialog.Root
@@ -115,6 +126,28 @@
                 aria-labelledby="show-label"
               />
               <Label for="show-label">Show Note Labels</Label>
+            </div>
+
+            <!-- Visible Seconds -->
+            <div class="mt-4">
+              <!-- Label for toggle group -->
+              <Label>Visible Seconds</Label>
+
+              <ToggleGroup.Root
+                type="single"
+                class="justify-start"
+                value={String(visibleSeconds)}
+                onValueChange={(value) => {
+                  setVisibleSeconds?.(Number(value));
+                }}
+              >
+                <!-- Loop for toggle group items -->
+                {#each visibleSecondsOptions as option}
+                  <ToggleGroup.Item value={String(option)}>
+                    {option}
+                  </ToggleGroup.Item>
+                {/each}
+              </ToggleGroup.Root>
             </div>
           </Tabs.Content>
         </Tabs.Root>

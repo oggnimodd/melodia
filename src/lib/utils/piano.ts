@@ -19,7 +19,6 @@ export const CONFIG = {
   pianoHeightRatio: 0.15,
   blackKeyHeightRatio: 0.6,
   blackKeyWidthRatio: 0.6,
-  visibleSeconds: 3,
   whiteKeyColor: "#ffffff",
   blackKeyColor: "#000000",
   activeWhiteKeyColor: "#2196F3",

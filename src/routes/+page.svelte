@@ -426,7 +426,7 @@
       const pianoTopY =
         pianoRoll.canvasCssHeight -
         pianoRoll.canvasCssHeight * CONFIG.pianoHeightRatio;
-      swipeFactor = CONFIG.visibleSeconds / pianoTopY;
+      swipeFactor = pianoRoll.visibleSeconds / pianoTopY;
     }
   }
 
@@ -528,6 +528,7 @@
   {showModal}
   audioVisualOffset={pianoRoll.audioVisualOffset}
   showLabels={pianoRoll.showLabels}
+  visibleSeconds={pianoRoll.visibleSeconds}
   onClose={handleCloseModal}
   onResetOffset={() => {
     pianoRoll.resetAudioVisualOffset();
@@ -535,10 +536,14 @@
   }}
   setShowLabels={(val) => {
     pianoRoll.setShowLabels(val);
-    (!isPlaying || isPaused) && drawPianoRoll();
+    drawPianoRoll();
   }}
   setAudioVisualOffset={(val) => {
     pianoRoll.setAudioVisualOffset(val);
+    drawPianoRoll();
+  }}
+  setVisibleSeconds={(val) => {
+    pianoRoll.setVisibleSeconds(val);
     drawPianoRoll();
   }}
 />
