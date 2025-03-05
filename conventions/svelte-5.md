@@ -239,24 +239,6 @@
       </ListComponent>
       ```
 
-## Component Instantiation and Lifecycle
-
-- **Rule:** Components are functions in Svelte 5, not classes. Use `mount` and `hydrate` from `svelte` for programmatic instantiation instead of `new Component()`.
-  - **Example (Correct):**
-    ```javascript
-    import { mount } from "svelte";
-    import App from "./App.svelte";
-    const app = mount(App, { target: document.getElementById("app") });
-    ```
-  - **Example (Incorrect - Svelte 4 Style):**
-    ```javascript
-    import App from "./App.svelte";
-    const app = new App({ target: document.getElementById("app") }); // Use mount in Svelte 5
-    ```
-- **Rule:** Use `unmount` to destroy components instead of `$destroy()`.
-  - **Example (Correct):** `unmount(app);`
-  - **Example (Incorrect - Svelte 4 Style):** `app.$destroy();` // Use unmount in Svelte 5
-
 ## Bindings
 
 - **Rule:** In runes mode, properties are not bindable by default. Use `$bindable()` to explicitly declare bindable props.
@@ -282,59 +264,10 @@
     <InputComponent bind:value={message} /><p>{message}</p>
     ```
 
-## Whitespace Handling
-
-- **Rule:** Be aware of the simplified whitespace handling in Svelte 5. Whitespace between nodes is collapsed, and whitespace at the start/end of tags is removed. Use `<svelte:options preserveWhitespace>` if needed, or understand the default behavior.
-
-## Modern Browser Requirement
-
-- **Rule:** Svelte 5 requires a modern browser. Ensure your target audience uses modern browsers and inform the AI to not generate code with IE compatibility in mind unless explicitly specified.
-
-## Component Names and Dot Notation
-
-- **Rule:** Capitalize component names to distinguish them from HTML elements (e.g., `<MyComponent />`).
-- **Rule:** Understand that dot notation in tags (e.g., `<foo.bar>`) is treated as a component, not a custom element tag. This is useful for dynamic component rendering, especially within `{#each}` blocks.
-
-## Stricter Syntax
-
-- **Rule:** Attribute/prop syntax is stricter. Quote complex attribute values: `<Component prop="this{is}valid" />`.
-- **Rule:** HTML structure is stricter. Write valid HTML and avoid relying on browser auto-correction (e.g., ensure `<tbody>` in `<table>` if needed).
 
 ## $inspect for Development
 
 - **Rule:** Use `$inspect()` for debugging and logging reactive values during development. It re-runs whenever the inspected value changes. It's a no-op in production.
-
-## $host for Custom Elements
-
-- **Rule:** When building custom elements, use `$host()` to access the host element for dispatching custom events.
-
----
-
-# TypeScript in Svelte 5
-
-## Script Tag and Preprocessing
-
-- **Rule:** Enable TypeScript in Svelte components by adding `lang="ts"` to the `<script>` tag: `<script lang="ts">`.
-- **Rule:** Configure `vitePreprocess` in `svelte.config.js` to enable full TypeScript support (for features beyond type-only).
-
-  - **Example (`svelte.config.js` for SvelteKit/Vite):**
-
-    ```javascript
-    import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
-
-    const config = {
-      preprocess: vitePreprocess(),
-    };
-
-    export default config;
-    ```
-
-## tsconfig.json Configuration
-
-- **Rule:** Ensure your `tsconfig.json` includes the following settings for Svelte 5 compatibility:
-  - `"target": "ES2022"` or `"target": "ES2015"` with `"useDefineForClassFields": true`.
-  - `"verbatimModuleSyntax": true`.
-  - `"isolatedModules": true`.
 
 ## Typing `$props`
 
@@ -445,32 +378,421 @@
     ```
 - **Rule:** Ensure your `.d.ts` file is included in your `tsconfig.json` configuration (e.g., within the `"include"` array).
 
----
+# SUPER SUPER IMPORTANT NOTES
 
-# Code Generation Preferences (Optional - Adjust as needed)
+####################################################
+- NEVER USE `writable` OR `context` ANYMORE IN SVELTE5, SHARING STATES BETWEEN COMPONENTS IS NOW DONE USING $STATE AND $DERIVED. YOU ARE NOT ALLOWED TO USE `writable` OR `context` IN SVELTE 5.
+####################################################
 
-## Style
-
-- **Preference:** Favor concise and explicit rune syntax.
-- **Preference:** Encourage the use of TypeScript for type safety in Svelte components.
-- **Preference:** Generate components that are functional and leverage runes for reactivity, avoiding class-based components unless for specific state management patterns (like state machines, as in your example).
-
-## Component Structure
-
-- **Structure:** Organize component logic in the `<script>` tag, template in the HTML, and styles in `<style>` tags.
-- **Structure:** For complex components, consider breaking them down into smaller, reusable components.
 
 ## State Management
 
 - **Guidance:** For simple component-level state, use `$state`. For derived data, use `$derived` or `$derived.by` as appropriate. Use `$effect` sparingly for side effects.
 - **Guidance:** For more complex state management scenarios (if needed in larger apps), consider patterns like stores (though runes are designed to cover many state management needs directly in components).
 
----
+# Universal Reactivity
 
-# Notes for Cursor AI
+Svelte 5 introduced a new universal system of reactivity named runes which means that you can use the same reactivity system inside and outside Svelte components as long as the file name includes the `.svelte` extension.
 
-- **Context Awareness:** When suggesting code or refactoring, prioritize Svelte 5 runes syntax and TypeScript best practices over legacy Svelte 4 syntax and JavaScript-only approaches. Specifically guide towards using `$derived.by` when complex derivation logic is detected.
-- **TypeScript Emphasis:** When generating Svelte components, default to using `<script lang="ts">` and encourage type annotations for props, state, and derived values.
-- **Migration Assistance:** Be helpful in suggesting migration steps from Svelte 4 to Svelte 5 syntax, and also in adding TypeScript to existing Svelte projects, referencing the migration guide and TypeScript documentation when appropriate.
-- **Best Practices:** Encourage best practices like avoiding prop mutation, using `$derived` and `$derived.by` appropriately for computations, using `$effect` judiciously, and leveraging TypeScript for robust and maintainable Svelte 5 code.
-- **Documentation Reference:** When explaining code or suggesting solutions, refer to the official Svelte 5 documentation for runes, new syntax, and TypeScript integration, particularly highlighting the use cases for both `$derived` and `$derived.by`.
+In this post I’m going to go over the different ways you can export and share reactive state in Svelte 5 using functions, classes and property accessors.
+
+## Global State
+
+This is a simple counter example that declares a reactive value `count` using the `$state` rune and increments it using a button:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  let count = $state(0)
+</script>
+
+<button onclick={() => count++}>
+  {count}
+</button>
+```
+
+Try exporting and importing the `count` value from the component:
+
+`counter.svelte.ts`
+
+```typescript
+export let count = $state(0)
+```
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { count } from './counter.svelte'
+</script>
+
+<button onclick={() => count++}>
+  {count}
+</button>
+```
+
+You might have expected this to work, but instead you get an error that says: “Cannot assign to import.”
+
+This is because Svelte doesn’t change how JavaScript works and imported values can only be modified by the exporter.
+
+In older versions of Svelte you would use a writable store to export the value which works because stores are objects:
+
+`counter.ts`
+
+```typescript
+// writable store
+import { writable } from 'svelte/store'; // Import writable
+
+export const count = writable(0)
+```
+
+In Svelte 5, you can pass an object to `$state` and Svelte is going to use a `Proxy` object to make the properties reactive:
+
+`counter.svelte.ts`
+
+```typescript
+// reactive object using a Proxy
+export const count = $state({ value: 0 })
+```
+
+You can’t reassign imports, but you can update objects so updating `count.value` works:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { count } from './counter.svelte'
+</script>
+
+<button onclick={() => count.value++}>
+  {count.value}
+</button>
+```
+
+This is very useful if you have a config that you want to expose to your entire app:
+
+`config.svelte.ts`
+
+```typescript
+export const config = $state({
+  theme: 'dark',
+  textSize: '16px',
+  textLength: '80ch',
+  // ...
+})
+```
+
+## Using Functions To Read And Write To Reactive Values
+
+You can use regular functions to read and write to a reactive value:
+
+`counter.svelte.ts`
+
+```typescript
+let count = $state(0)
+
+export function getCount() {
+  return count
+}
+
+export function setCount(value: number) {
+  count = value
+}
+```
+
+This comes at the cost of developer experience since you have to write more verbose code:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { getCount, setCount } from './counter.svelte'
+</script>
+
+<button onclick={() => setCount(getCount() + 1)}>
+  {getCount()}
+</button>
+```
+
+## Using Property Accessors To Read And Write To Reactive Values
+
+You can define a getter and setter and use property accessors for a nicer developer experience:
+
+`counter.svelte.ts`
+
+```typescript
+let count = $state(0)
+
+export const counter = {
+  get count() { return count },
+  set count(value) { count = value },
+  increment() { count++ }
+}
+```
+
+You can use functions instead of property accessors if you want:
+
+`counter.svelte.ts`
+
+```typescript
+let count = $state(0)
+
+export const counter = {
+  count() { return count },
+  setCount(value) { count = value },
+  increment() { count++ }
+}
+```
+
+Using property accessors you can read and write to `count` using `counter.count` or `increment`:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { counter } from './counter.svelte'
+</script>
+
+<button onclick={() => counter.count++}>
+  {counter.count}
+</button>
+```
+
+Of course, you would not export an object like this directly from the module but from a function instead:
+
+`counter.svelte.ts`
+
+```typescript
+export function createCounter() {
+  let count = $state(0)
+  // you can also derive values
+  let double = $derived(count * 2)
+
+  return {
+    get count() { return count },
+    set count(value) { count = value },
+    increment() { count++ }
+  }
+}
+```
+
+Then you would initialize the counter inside the component:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { createCounter } from './counter.svelte'
+
+  const counter = createCounter()
+</script>
+
+<button onclick={counter.increment}>
+  {counter.count}
+</button>
+```
+
+## Destructuring Reactive Values
+
+You might want to destructure `count` and `increment` from `counter` but as you’re going to see it won’t work as expected when using property accessors:
+
+`+page.svelte`
+```svelte
+<script lang="ts">
+  import { createCounter } from './counter.svelte'; // Import createCounter
+
+  const { count, increment } = createCounter(); // Call createCounter
+</script>
+
+<button onclick={() => count++}>  
+  {count}
+</button>
+```
+
+This is because when you destructure `count` you’re going to get the value at the time it was created instead of the reactive value.
+
+You can get around this by using proxied state to “wrap” the value or by returning a function:
+
+`counter.svelte.ts`
+
+```typescript
+export function createCounterProxy() {
+  let count = $state({ value: 0 })
+  return { count }
+}
+
+export function createCounterFunction() {
+  let count = $state(0)
+
+  return {
+    count() { return count },
+    setCount(value) { count = value },
+    increment() {count++} // added increment to createCounterFunction
+  }
+}
+```
+
+Which method you prefer is up to you:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { createCounterProxy, createCounterFunction } from './counter.svelte'
+
+  const { count: countProxy } = createCounterProxy()  //Renamed for clarity
+  const { count: countFunction, setCount, increment } = createCounterFunction()
+</script>
+
+<button onclick={() => countProxy.value++}>
+  {countProxy.value}
+</button>
+
+<button onclick={() => setCount(countFunction() + 1)}>
+  {countFunction()}
+</button>
+```
+
+## Using Classes For Reactive State
+
+Creating a piece of reactive state inside a class works the same:
+
+`counter.svelte.ts`
+
+```typescript
+export class Counter {
+  count = $state(0)
+  // you can also derive values
+  double = $derived(this.count * 2)
+
+  increment = () => this.count++
+}
+```
+
+You can tuck the class inside a function if you want to hide the `new` keyword, but I’m just going to instantiate the class directly:
+
+`+page.svelte`
+
+```svelte
+<script lang="ts">
+  import { Counter } from './counter.svelte'
+
+  const counter = new Counter()
+</script>
+
+<button onclick={counter.increment}>
+  {counter.count}
+</button>
+```
+
+Notice how you don’t have to specify a getter and setter for `count` since Svelte does that for you unless you want to:
+
+`counter.svelte.ts`
+
+```typescript
+export class Counter {
+  // make count private
+  #count = $state(0)
+
+  // create property accessors
+  get count() {return this.#count }
+  set count(value) { this.#count = value }
+}
+```
+
+If you’re using TypeScript you can use type assertion to type a reactive value inside a class:
+`example.svelte.ts`
+
+```typescript
+export class Example {
+  example = $state() as Type // Replace Type with your actual type
+}
+```
+
+## Doing Side Effects
+
+If you need to do a side effect like writing to local storage or updating the DOM you can use `$effect` to track when a value updates:
+`example.svelte.ts`
+
+```typescript
+export function createCounter() {
+  let count = $state({ value: 0 }) // added let
+
+  $effect(() => {
+    console.log(count.value)
+  })
+
+  return { count }
+}
+
+export class Counter {
+  count = $state({ value: 0 })
+
+  constructor() {
+    $effect(() => {
+      console.log(this.count.value) //access with this.count
+    })
+  }
+}
+```
+
+You should be careful when using functions and classes with effects inside a module outside a Svelte component because effects must have a parent effect for cleanup:
+
+`example.svelte.ts`
+
+```typescript
+function createCounter() {
+  let count = $state({ value: 0 }) //added let
+
+  $effect(() => {
+    console.log(count.value)
+  })
+
+  return { count }
+}
+
+// ⛔️ `$effect` can only be used inside an effect
+// (e.g. during component initialisation)
+const counter = createCounter()
+```
+If you run into that problem you have to wrap the effect with a root effect:
+
+`example.svelte.ts`
+
+```typescript
+function createCounter() {
+  let count = $state({ value: 0 }) //added let
+
+  $effect.root(() => {
+    $effect(() => {
+      console.log(count.value)
+    })
+  })
+
+  return { count }
+}
+
+// 👍️ no problem
+const counter = createCounter()
+```
+
+You can avoid this problem and do side effects when you read and write to the reactive value:
+
+`example.svelte.ts`
+
+```typescript
+export class Counter {
+  #count = $state(0)
+
+  get count() {
+    console.log(this.#count)
+    return this.#count
+  }
+
+  set count(value) {
+    console.log(value)
+    this.#count = value
+  }
+}
+```
