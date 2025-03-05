@@ -21,6 +21,9 @@
     /** How many seconds should be displayed in the piano roll */
     visibleSeconds: number;
 
+    /** Whether to show octave lines on piano keys */
+    showOctaveLines: boolean;
+
     /** Callback: invoked when user clicks 'Close' or closes the modal */
     onClose?: () => void;
 
@@ -35,6 +38,9 @@
 
     /** Callback: invoked to change the visible seconds value */
     setVisibleSeconds?: (val: number) => void;
+
+    /** Callback: invoked to change the octave line color */
+    setShowOctaveLines?: (val: boolean) => void;
   }
 
   // Destructure props (Svelte 5)
@@ -43,11 +49,13 @@
     audioVisualOffset,
     showLabels,
     visibleSeconds,
+    showOctaveLines,
     onClose,
     onResetOffset,
     setShowLabels,
     setAudioVisualOffset,
     setVisibleSeconds,
+    setShowOctaveLines,
   }: SettingsModalProps = $props();
 
   const visibleSecondsOptions = [2, 3, 4, 5, 6];
@@ -116,7 +124,7 @@
             </div>
           </Tabs.Content>
           <Tabs.Content value="piano" class="pt-4">
-            <div class="flex items-center gap-2">
+            <div class="mb-4 flex items-center gap-2">
               <Checkbox
                 id="show-label"
                 onCheckedChange={(checked) => {
@@ -126,6 +134,18 @@
                 aria-labelledby="show-label"
               />
               <Label for="show-label">Show Note Labels</Label>
+            </div>
+
+            <div class="mb-4 flex items-center gap-2">
+              <Checkbox
+                id="show-octave-lines"
+                onCheckedChange={(checked) => {
+                  setShowOctaveLines?.(checked);
+                }}
+                checked={showOctaveLines}
+                aria-labelledby="show-octave-lines"
+              />
+              <Label for="show-octave-lines">Show Octave Lines</Label>
             </div>
 
             <!-- Visible Seconds -->

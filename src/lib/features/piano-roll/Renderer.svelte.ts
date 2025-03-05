@@ -24,7 +24,7 @@ export interface PianoRollInitOptions {
 const DEFAULT_VISUAL_OFFSET = -0.1;
 const DEFAULT_SHOW_LABELS = true;
 const DEFAULT_VISIBLE_SECONDS = 4;
-const DEFAULT_SHOW_OCTAVE_LINES = true;
+const DEFAULT_SHOW_OCTAVE_LINES = false;
 
 export class PianoRoll {
   // Configuration options available immediately.
@@ -34,9 +34,10 @@ export class PianoRoll {
   visibleSeconds = $state(DEFAULT_VISIBLE_SECONDS);
   minMidi = $state(24);
   maxMidi = $state(108);
+
   // Customizable octave line properties
-  octaveLineColor = $state("#ffffff");
-  octaveLineWidth = $state(1);
+  octaveLineColor = $state("rgba(255, 255, 255, 0.5)");
+  octaveLineWidth = $state(0.5);
 
   // DOM-dependent properties (set later in onMount).
   canvas: HTMLCanvasElement | null = $state(null);

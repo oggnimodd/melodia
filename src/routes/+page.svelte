@@ -529,6 +529,7 @@
   audioVisualOffset={pianoRoll.audioVisualOffset}
   showLabels={pianoRoll.showLabels}
   visibleSeconds={pianoRoll.visibleSeconds}
+  showOctaveLines={pianoRoll.showOctaveLines}
   onClose={handleCloseModal}
   onResetOffset={() => {
     pianoRoll.resetAudioVisualOffset();
@@ -544,6 +545,10 @@
   }}
   setVisibleSeconds={(val) => {
     pianoRoll.setVisibleSeconds(val);
+    drawPianoRoll();
+  }}
+  setShowOctaveLines={(val) => {
+    pianoRoll.setShowOctaveLines(val);
     drawPianoRoll();
   }}
 />
