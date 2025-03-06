@@ -16,6 +16,7 @@
   import type { MidiData } from "$lib/models/midi";
   import { autoSaveMidi } from "$lib/features/midi/storage";
   import { toast } from "svelte-sonner";
+  import { selectedMidi } from "$lib/features/midi";
 
   // TODO: extract the file handler
   let autoSaveEnabled = $state(true);
@@ -25,7 +26,6 @@
   let canvas = $state<HTMLCanvasElement | null>(null);
 
   // Playback & MIDI states
-  let midiFile = $state<File | null>(null);
   let midiData = $state<MidiData | null>(null);
   let allNotes: Notes = $state([]);
   let isPlaying = $state(false);
@@ -132,14 +132,14 @@
       pianoRoll.clearCache();
       midiData = null;
       allNotes = [];
-      midiFile = input.files[0];
+      selectedMidi.file = input.files[0];
 
       try {
-        const data = await parseMidiFile(midiFile);
+        const data = await parseMidiFile(selectedMidi.file);
 
         if (autoSaveEnabled) {
           try {
-            await autoSaveMidi(midiFile, data);
+            await autoSaveMidi(selectedMidi.file, data);
           } catch (error) {
             toast.error("Failed to auto-save MIDI file.");
           }
@@ -481,7 +481,7 @@
     <PlaybackControls
       bind:controlsDiv
       {fullscreen}
-      {midiFile}
+      midiFile={selectedMidi.file}
       {isPlaying}
       {isPaused}
       {currentTime}
