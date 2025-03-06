@@ -87,10 +87,6 @@
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
-  // Reactive sets for active notes and cached MIDI tracks
-  let activeNotes = new SvelteSet<number>();
-  let cachedActiveMidiTracks = new SvelteMap<number, number>();
-
   // PianoRoll instance (initialized in onMount)
   let pianoRoll = $state(
     new PianoRoll({
@@ -98,24 +94,6 @@
       maxMidi: 108,
     })
   );
-
-  function updateActiveNotes() {
-    activeNotes.clear();
-    cachedActiveMidiTracks.clear();
-    // Use the offset from your PianoRoll instance
-    const offset = pianoRoll.audioVisualOffset;
-    for (const note of allNotes) {
-      const activationTime = note.time + offset;
-      const deactivationTime = note.time + note.duration + offset;
-      if (currentTime >= activationTime && currentTime <= deactivationTime) {
-        activeNotes.add(note.id);
-        cachedActiveMidiTracks.set(note.midi, note.track);
-      }
-    }
-    if (pianoRoll) {
-      pianoRoll.activeMidiTracks = cachedActiveMidiTracks;
-    }
-  }
 
   function drawPianoRoll() {
     if (pianoRoll) pianoRoll.drawAll(currentTime);
@@ -137,7 +115,7 @@
       pauseAtEnd();
       return;
     }
-    updateActiveNotes();
+    pianoRoll.updateActiveNotes(currentTime, allNotes);
     drawPianoRoll();
     animationFrameId = requestAnimationFrame(animate);
   }
@@ -146,8 +124,7 @@
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
       if (isPlaying) haltPlayback();
-      activeNotes.clear();
-      cachedActiveMidiTracks.clear();
+      pianoRoll.clearCache();
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
@@ -302,7 +279,7 @@
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
-    updateActiveNotes();
+    pianoRoll.updateActiveNotes(currentTime, allNotes);
     drawPianoRoll();
     if (val >= totalDuration) {
       Tone.getTransport().pause();
@@ -321,7 +298,7 @@
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
-    updateActiveNotes();
+    pianoRoll.updateActiveNotes(currentTime, allNotes);
     drawPianoRoll();
     isSliding = false;
   }
@@ -361,7 +338,7 @@
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
-      updateActiveNotes();
+      pianoRoll.updateActiveNotes(currentTime, allNotes);
       (Tone.getTransport() as any).seconds = musicalToRealTime(currentTime);
       drawPianoRoll();
       lastY = e.clientY;
@@ -389,7 +366,7 @@
         requestAnimationFrame(animate);
       }
     }
-    updateActiveNotes();
+    pianoRoll.updateActiveNotes(currentTime, allNotes);
     drawPianoRoll();
     startX = null;
     startY = null;

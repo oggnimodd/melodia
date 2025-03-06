@@ -1,4 +1,3 @@
-// Renderer.svelte.ts
 import {
   CONFIG,
   midiToNoteNameNoOctave,
@@ -9,7 +8,7 @@ import {
   getLayoutOffsetRaw,
 } from "$lib/utils/piano";
 import type { Notes } from "$lib/models/midi";
-import { SvelteMap } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 
 export interface PianoRollOptions {
   minMidi?: number;
@@ -50,9 +49,13 @@ export class PianoRoll {
   canvasCssWidth = $state(0);
   canvasCssHeight = $state(0);
   allNotes: Notes = $state([]);
-  // Assume an array of note objects.
+
+  // Note layout cache.
   keyCache = new SvelteMap<number, { x: number; w: number }>();
-  activeMidiTracks = new SvelteMap<number, number>();
+
+  // Active note state for rendering.
+  activeMidiTracks = $state(new SvelteMap<number, number>());
+  activeNotes = $state(new SvelteSet<number>());
 
   constructor(options: PianoRollOptions = {}) {
     this.minMidi = options.minMidi ?? this.minMidi;
@@ -304,5 +307,25 @@ export class PianoRoll {
     this.drawOctaveLines();
     this.drawNotes(currentTime);
     this.drawPianoKeys();
+  }
+
+  updateActiveNotes(currentTime: number, allNotes: Notes) {
+    this.activeNotes.clear();
+    this.activeMidiTracks.clear();
+    const offset = this.audioVisualOffset;
+    for (const note of allNotes) {
+      const activationTime = note.time + offset;
+      const deactivationTime = note.time + note.duration + offset;
+      if (currentTime >= activationTime && currentTime <= deactivationTime) {
+        this.activeNotes.add(note.id);
+        this.activeMidiTracks.set(note.midi, note.track);
+      }
+    }
+  }
+
+  clearCache() {
+    this.keyCache.clear();
+    this.activeMidiTracks.clear();
+    this.activeNotes.clear();
   }
 }
