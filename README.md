@@ -14,7 +14,7 @@
        Show the FPS counter only when in development mode.
 - [x] **Modular Code Refactor**  
        Break up the code into smaller, more reusable components.
-- [ ] **Save midi to local storage**  
+- [x] **Save midi to local storage**  
        Allow users to save their MIDI files to local storage so they dont need to upload them every time.
 
 ### Medium Priority
