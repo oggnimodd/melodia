@@ -490,7 +490,7 @@
 >
   {#if !fullscreen.isActive}
     <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-    <div class="grid grid-cols-2 gap-4">
+    <div class="flex grid-cols-2 flex-col gap-2 sm:grid sm:gap-4">
       <Input
         placeholder="Upload MIDI file"
         type="file"
@@ -498,7 +498,8 @@
         onchange={handleFileChange}
       />
       <!-- Using our Button component as a link to the library page -->
-      <Button href="/midi-library">Choose from Library</Button>
+      <Button variant="outline" href="/midi-library">Choose from Library</Button
+      >
     </div>
   {/if}
   {#if allNotes.length > 0}
