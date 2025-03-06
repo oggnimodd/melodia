@@ -6,7 +6,6 @@
   import { browser } from "$app/environment";
   import { formatSecondsToTime } from "$lib/utils/time";
   import useFullScreen from "$lib/hooks/useFullscreen.svelte";
-  import { SvelteSet, SvelteMap } from "svelte/reactivity";
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import PlaybackControls from "$lib/components/PlaybackControls.svelte";
@@ -14,6 +13,12 @@
   import FpsCounter from "$lib/components/FpsCounter.svelte";
   import { PianoRoll } from "$lib/features/piano-roll";
   import { CONFIG, createSalamanderPiano } from "$lib/utils/piano";
+  import type { MidiData } from "$lib/models/midi";
+  import { autoSaveMidi } from "$lib/features/midi/storage";
+  import { toast } from "svelte-sonner";
+
+  // TODO: extract the file handler
+  let autoSaveEnabled = $state(true);
 
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
@@ -21,7 +26,7 @@
 
   // Playback & MIDI states
   let midiFile = $state<File | null>(null);
-  let midiData = $state<Awaited<ReturnType<typeof parseMidiFile>> | null>(null);
+  let midiData = $state<MidiData | null>(null);
   let allNotes: Notes = $state([]);
   let isPlaying = $state(false);
   let isPaused = $state(false);
@@ -128,40 +133,55 @@
       midiData = null;
       allNotes = [];
       midiFile = input.files[0];
-      const data = await parseMidiFile(midiFile);
-      midiData = data;
-      let noteIdCounter = 0;
-      const newNotes: Notes = [];
-      data.tracks.forEach((track, trackIndex) => {
-        track.notes.forEach((note) => {
-          newNotes.push({
-            id: noteIdCounter++,
-            time: note.time,
-            duration: note.duration,
-            midi: note.midi,
-            name: note.name,
-            track: trackIndex,
-            velocity: note.velocity,
+
+      try {
+        const data = await parseMidiFile(midiFile);
+
+        if (autoSaveEnabled) {
+          try {
+            await autoSaveMidi(midiFile, data);
+          } catch (error) {
+            toast.error("Failed to auto-save MIDI file.");
+          }
+        }
+
+        midiData = data;
+        let noteIdCounter = 0;
+        const newNotes: Notes = [];
+        data.tracks.forEach((track, trackIndex) => {
+          track.notes.forEach((note) => {
+            newNotes.push({
+              id: noteIdCounter++,
+              time: note.time,
+              duration: note.duration,
+              midi: note.midi,
+              name: note.name,
+              track: trackIndex,
+              velocity: note.velocity,
+            });
           });
         });
-      });
-      newNotes.sort((a, b) => a.time - b.time);
-      allNotes = newNotes;
-      if (allNotes.length > 0) {
-        pianoRoll.allNotes = allNotes;
-        const trackMin = Math.min(...allNotes.map((n) => n.midi));
-        const trackMax = Math.max(...allNotes.map((n) => n.midi));
-        // Reinitialize canvas with updated note ranges.
-        pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
+        newNotes.sort((a, b) => a.time - b.time);
+        allNotes = newNotes;
+        if (allNotes.length > 0) {
+          pianoRoll.allNotes = allNotes;
+          // Reinitialize canvas with updated note ranges.
+          pianoRoll.initCanvas({
+            fullscreen: fullscreen.isActive,
+            controlsDiv,
+          });
+        }
+        originalBPM =
+          data.header?.tempos && data.header.tempos.length > 0
+            ? data.header.tempos[0].bpm
+            : 120;
+        speedPercent = 100;
+        userBPM = originalBPM;
+        Tone.getTransport().bpm.value = userBPM;
+        drawPianoRoll();
+      } catch (error) {
+        toast.error("Failed to parse MIDI file.");
       }
-      originalBPM =
-        data.header?.tempos && data.header.tempos.length > 0
-          ? data.header.tempos[0].bpm
-          : 120;
-      speedPercent = 100;
-      userBPM = originalBPM;
-      Tone.getTransport().bpm.value = userBPM;
-      drawPianoRoll();
     }
   }
 

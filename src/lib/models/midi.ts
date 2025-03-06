@@ -1,3 +1,5 @@
+import type { parseMidiFile } from "$lib/features/midi";
+
 interface Note {
   time: number;
   duration: number;
@@ -10,3 +12,5 @@ interface Note {
 }
 
 export type Notes = Note[];
+
+export type MidiData = Awaited<ReturnType<typeof parseMidiFile>>;
