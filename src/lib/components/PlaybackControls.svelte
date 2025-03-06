@@ -11,6 +11,8 @@
   import BpmSettings from "$lib/components/BpmSettings.svelte";
   import { cn } from "$lib/utils";
   import type { MidiData } from "$lib/models/midi";
+  import isMobile from "is-mobile";
+  import { lockOrientationToLandscape } from "$lib/utils/screen";
 
   // Define the props interface with a new line between each property
 
@@ -115,6 +117,14 @@
     handleSliderInput,
     handleSliderPointerUp,
   }: PlaybackControlProps = $props();
+
+  const handleFullscreenClick = () => {
+    toggleFullscreen();
+
+    if (isMobile() && !fullscreen.isActive) {
+      lockOrientationToLandscape();
+    }
+  };
 </script>
 
 <!-- Playback controls container -->
@@ -175,7 +185,7 @@
         {resetSpeed}
         {applySpeed}
       />
-      <Button size="icon-sm" onclick={toggleFullscreen}>
+      <Button size="icon-sm" onclick={handleFullscreenClick}>
         <IconMaximize />
       </Button>
       <Button
