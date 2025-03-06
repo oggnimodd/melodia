@@ -174,6 +174,7 @@
           size={16}
         />
         <Input
+          autofocus
           type="text"
           placeholder="Search by file name..."
           bind:value={searchTerm}
