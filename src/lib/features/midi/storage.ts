@@ -80,6 +80,18 @@ export async function getMidiByHash(
   });
 }
 
+export async function clearAllMidis(): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.clear();
+    req.onsuccess = () => resolve();
+    req.onerror = () => reject(req.error);
+    tx.oncomplete = () => db.close();
+  });
+}
+
 // Auto-save a parsed MIDI file.
 // After successfully parsing your MIDI file, call this function.
 // It converts the MIDI data to JSON, computes a hash, checks if it exists, and then saves it.
