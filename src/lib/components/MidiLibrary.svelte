@@ -15,6 +15,7 @@
     HardDrive,
     ChevronDown,
     ChevronUp,
+    ChevronLeft,
   } from "lucide-svelte";
   import { Input } from "$lib/components/ui/input/index.js";
   import { toast } from "svelte-sonner";
@@ -148,7 +149,9 @@
 >
   <Card.Root class="border-border/40 shadow-md">
     <Card.Header class="pb-2 sm:pb-4">
-      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+      <div
+        class="flex flex-col-reverse gap-y-2 sm:flex-row sm:items-center sm:justify-between"
+      >
         <div>
           <Card.Title class="text-xl font-bold sm:text-2xl"
             >MIDI Library</Card.Title
@@ -157,6 +160,15 @@
             Browse and manage your saved MIDI files
           </Card.Description>
         </div>
+
+        <Button
+          size="sm"
+          href="/"
+          class="flex-0 ml-auto h-8 w-auto self-start  justify-self-start px-3"
+        >
+          <ChevronLeft size={16} class="mr-1" />
+          Back
+        </Button>
       </div>
     </Card.Header>
     <Card.Content class="space-y-3 sm:space-y-4">
