@@ -22,7 +22,7 @@ export interface PianoRollInitOptions {
 
 const DEFAULT_VISUAL_OFFSET = -0.1;
 const DEFAULT_SHOW_LABELS = true;
-const DEFAULT_VISIBLE_SECONDS = 4;
+const DEFAULT_VISIBLE_SECONDS = 3;
 const DEFAULT_SHOW_OCTAVE_LINES = false;
 
 export class PianoRoll {
