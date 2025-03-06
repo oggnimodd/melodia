@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Tone from "tone";
-  import { parseMidiFile } from "$lib/features/midi";
+  import { parseMidiFile, sampler } from "$lib/features/midi";
   import { Input } from "$lib/components/ui/input";
   import { onMount, onDestroy } from "svelte";
   import { browser } from "$app/environment";
@@ -88,7 +88,6 @@
 
   // Audio variables
   let audioStartTime = 0;
-  let pianoSampler = $state<Tone.Sampler | null>(null);
 
   // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
@@ -210,8 +209,8 @@
     isPaused = false;
     currentTime = 0;
     await Tone.start();
-    if (!pianoSampler) {
-      pianoSampler = createSalamanderPiano();
+    if (!sampler.instrument) {
+      sampler.instrument = createSalamanderPiano();
     }
     await Tone.loaded();
     const transport = Tone.getTransport();
@@ -221,7 +220,7 @@
       const realTime = musicalToRealTime(n.time);
       transport.schedule((time) => {
         const noteDuration = musicalToRealTime(n.duration);
-        pianoSampler!.triggerAttackRelease(
+        sampler.instrument!.triggerAttackRelease(
           n.name,
           noteDuration,
           time,
@@ -458,22 +457,10 @@
         pianoRoll.setElements({ canvas, containerDiv });
         pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
       }
-      const ctx = new Tone.Context({
-        latencyHint: "interactive",
-        lookAhead: 0,
-      });
-      Tone.setContext(ctx);
-      Tone.immediate();
-      (async () => {
-        pianoSampler = createSalamanderPiano();
-        await Tone.loaded();
-        console.log("Sampler preloaded");
-      })();
     }
   });
   onDestroy(() => {
     if (!browser) return;
-    if (pianoSampler) pianoSampler.dispose();
     if (animationFrameId) cancelAnimationFrame(animationFrameId);
     const transport = Tone.getTransport();
     transport.stop();

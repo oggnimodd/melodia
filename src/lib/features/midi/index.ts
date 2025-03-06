@@ -1,4 +1,4 @@
 export { parseMidiFile } from "./parser";
 
 // Stores
-export { selectedMidi } from "./store.svelte";
+export { selectedMidi, sampler } from "./store.svelte";
