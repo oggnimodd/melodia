@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Tone from "tone";
-  import { parseMidiFile } from "$lib/midi/parser";
+  import { parseMidiFile } from "$lib/features/midi";
   import { Input } from "$lib/components/ui/input";
   import { onMount, onDestroy } from "svelte";
   import { browser } from "$app/environment";

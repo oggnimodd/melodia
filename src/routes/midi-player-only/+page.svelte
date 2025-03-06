@@ -1,6 +1,6 @@
 <script lang="ts">
   import * as Tone from "tone";
-  import { parseMidiFile } from "$lib/midi/parser";
+  import { parseMidiFile } from "$lib/features/midi";
   import Button from "$lib/components/ui/button/button.svelte";
   import { Input } from "$lib/components/ui/input";
   import Slider from "$lib/components/ui/slider/slider.svelte";

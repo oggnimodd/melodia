@@ -1,0 +1,1 @@
+export { parseMidiFile } from "./parser";
