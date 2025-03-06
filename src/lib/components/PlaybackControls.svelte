@@ -10,6 +10,7 @@
   import IconSettings from "@tabler/icons-svelte/icons/settings";
   import BpmSettings from "$lib/components/BpmSettings.svelte";
   import { cn } from "$lib/utils";
+  import type { MidiData } from "$lib/models/midi";
 
   // Define the props interface with a new line between each property
 
@@ -21,7 +22,7 @@
     fullscreen: { isActive: boolean };
 
     /** The currently loaded MIDI file (if any) */
-    midiFile: File | null;
+    midiData: MidiData | null;
 
     /** Indicates if playback is currently running */
     isPlaying: boolean;
@@ -91,7 +92,7 @@
   let {
     controlsDiv = $bindable(),
     fullscreen,
-    midiFile,
+    midiData,
     isPlaying,
     isPaused,
     currentTime,
@@ -126,7 +127,7 @@
   class:mt-4={!fullscreen.isActive}
   bind:this={controlsDiv}
 >
-  {#if midiFile}
+  {#if midiData}
     <!-- Playback buttons and BPM controls -->
     <div class="flex items-center gap-x-1.5">
       <Button
@@ -150,7 +151,7 @@
       <Button
         class="bg-purple-500 hover:bg-purple-600"
         size="icon-sm"
-        disabled={!midiFile || currentTime <= 0}
+        disabled={currentTime <= 0}
         onmouseup={seekBackward}
       >
         <IconPlayerSkipBack />
@@ -158,7 +159,7 @@
       <Button
         class="bg-purple-500 hover:bg-purple-600"
         size="icon-sm"
-        disabled={!midiFile || currentTime >= totalDuration}
+        disabled={currentTime >= totalDuration}
         onmouseup={seekForward}
       >
         <IconPlayerSkipForward />
@@ -174,7 +175,7 @@
         {resetSpeed}
         {applySpeed}
       />
-      <Button size="icon-sm" disabled={!midiFile} onclick={toggleFullscreen}>
+      <Button size="icon-sm" onclick={toggleFullscreen}>
         <IconMaximize />
       </Button>
       <Button

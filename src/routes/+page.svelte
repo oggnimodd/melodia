@@ -17,6 +17,7 @@
   import { autoSaveMidi } from "$lib/features/midi/storage";
   import { toast } from "svelte-sonner";
   import { selectedMidi } from "$lib/features/midi";
+  import Button from "$lib/components/ui/button/button.svelte";
 
   // TODO: extract the file handler
   let autoSaveEnabled = $state(true);
@@ -125,6 +126,53 @@
     animationFrameId = requestAnimationFrame(animate);
   }
 
+  function processMidiData(data: MidiData) {
+    if (isPlaying) haltPlayback();
+    pianoRoll.clearCache();
+    midiData = data;
+    let noteIdCounter = 0;
+    const newNotes: Notes = [];
+    data.tracks.forEach((track, trackIndex) => {
+      track.notes.forEach((note) => {
+        newNotes.push({
+          id: noteIdCounter++,
+          time: note.time,
+          duration: note.duration,
+          midi: note.midi,
+          name: note.name,
+          track: trackIndex,
+          velocity: note.velocity,
+        });
+      });
+    });
+    newNotes.sort((a, b) => a.time - b.time);
+    allNotes = newNotes;
+    if (allNotes.length > 0) {
+      pianoRoll.allNotes = allNotes;
+      // Reinitialize canvas with updated note ranges.
+      pianoRoll.initCanvas({
+        fullscreen: fullscreen.isActive,
+        controlsDiv,
+      });
+    }
+    originalBPM =
+      data.header?.tempos && data.header.tempos.length > 0
+        ? data.header.tempos[0].bpm
+        : 120;
+    speedPercent = 100;
+    userBPM = originalBPM;
+    Tone.getTransport().bpm.value = userBPM;
+    drawPianoRoll();
+  }
+
+  $effect(() => {
+    if (selectedMidi.data) {
+      processMidiData(selectedMidi.data);
+      selectedMidi.data = null;
+      selectedMidi.file = null;
+    }
+  });
+
   async function handleFileChange(e: Event) {
     const input = e.target as HTMLInputElement;
     if (input.files && input.files.length > 0) {
@@ -145,40 +193,7 @@
           }
         }
 
-        midiData = data;
-        let noteIdCounter = 0;
-        const newNotes: Notes = [];
-        data.tracks.forEach((track, trackIndex) => {
-          track.notes.forEach((note) => {
-            newNotes.push({
-              id: noteIdCounter++,
-              time: note.time,
-              duration: note.duration,
-              midi: note.midi,
-              name: note.name,
-              track: trackIndex,
-              velocity: note.velocity,
-            });
-          });
-        });
-        newNotes.sort((a, b) => a.time - b.time);
-        allNotes = newNotes;
-        if (allNotes.length > 0) {
-          pianoRoll.allNotes = allNotes;
-          // Reinitialize canvas with updated note ranges.
-          pianoRoll.initCanvas({
-            fullscreen: fullscreen.isActive,
-            controlsDiv,
-          });
-        }
-        originalBPM =
-          data.header?.tempos && data.header.tempos.length > 0
-            ? data.header.tempos[0].bpm
-            : 120;
-        speedPercent = 100;
-        userBPM = originalBPM;
-        Tone.getTransport().bpm.value = userBPM;
-        drawPianoRoll();
+        processMidiData(data);
       } catch (error) {
         toast.error("Failed to parse MIDI file.");
       }
@@ -475,13 +490,22 @@
 >
   {#if !fullscreen.isActive}
     <h1 class="mb-3 text-2xl font-semibold text-white">Melodia</h1>
-    <Input type="file" accept=".midi,.mid" onchange={handleFileChange} />
+    <div class="grid grid-cols-2 gap-4">
+      <Input
+        placeholder="Upload MIDI file"
+        type="file"
+        accept=".midi,.mid"
+        onchange={handleFileChange}
+      />
+      <!-- Using our Button component as a link to the library page -->
+      <Button href="/midi-library">Choose from Library</Button>
+    </div>
   {/if}
   {#if allNotes.length > 0}
     <PlaybackControls
       bind:controlsDiv
       {fullscreen}
-      midiFile={selectedMidi.file}
+      {midiData}
       {isPlaying}
       {isPaused}
       {currentTime}

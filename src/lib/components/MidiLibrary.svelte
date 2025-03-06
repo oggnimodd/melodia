@@ -18,6 +18,8 @@
   } from "lucide-svelte";
   import { Input } from "$lib/components/ui/input/index.js";
   import { toast } from "svelte-sonner";
+  import { selectedMidi } from "$lib/features/midi";
+  import { goto } from "$app/navigation";
 
   // Define a type alias for your stored MIDI files.
   interface StoredMidi {
@@ -135,6 +137,13 @@
     showStorageInfo = !showStorageInfo;
   }
 
+  // When a MIDI item is clicked, update the shared state and navigate back.
+  function chooseMidi(midi: StoredMidi) {
+    selectedMidi.data = midi.data;
+    selectedMidi.file = null;
+    goto("/"); // Return to main page
+  }
+
   onMount(() => {
     loadMidis();
     updateStorageInfo();
@@ -247,6 +256,7 @@
         <div class="space-y-3">
           {#each filteredMidis as midi (midi.hash)}
             <Card.Root
+              onclick={() => chooseMidi(midi)}
               class="cursor-pointer overflow-hidden transition-all hover:bg-accent/10"
             >
               <div class="flex items-center justify-between p-4">
