@@ -4,10 +4,6 @@
 
 ### Top Priority
 
-- [ ] **Display MIDI Key on Canvas**  
-       Show the MIDI key on top of the piano keys (right side).
-- [ ] **Display Time Signature**  
-       Add the time signature (e.g., 4/4, 2/4) on top of the piano keys (left side).
 - [x] **Integrate shadcn for Modal Settings**  
        Replace the current modal with shadcn's version.
 - [x] **Set Visible Seconds Option**  
@@ -36,3 +32,10 @@
        Create a landing page that looks cool and showcases your personal brand.
 - [ ] **Add README**  
        Write a README that explains the project and its features.
+
+### Future Plans
+
+- [ ] **Display MIDI Key on Canvas**  
+       Show the MIDI key on top of the piano keys (right side).
+- [ ] **Display Time Signature**  
+       Add the time signature (e.g., 4/4, 2/4) on top of the piano keys (left side).
