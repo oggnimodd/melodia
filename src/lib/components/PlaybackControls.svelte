@@ -140,16 +140,7 @@
   {#if midiData}
     <!-- Playback buttons and BPM controls -->
     <div class="flex items-center gap-x-1.5">
-      <Button
-        class={cn("", {
-          "bg-green-500 hover:bg-green-600":
-            !isPlaying || currentTime >= totalDuration,
-          "bg-yellow-500 hover:bg-yellow-600": isPlaying && !isPaused,
-          "bg-blue-500 hover:bg-blue-600": isPlaying && isPaused,
-        })}
-        size="icon-sm"
-        onclick={handlePlayButtonClick}
-      >
+      <Button size="icon-sm" onclick={handlePlayButtonClick}>
         {#if !isPlaying || currentTime >= totalDuration}
           <IconPlayerPlay />
         {:else if isPlaying && !isPaused}
@@ -159,7 +150,6 @@
         {/if}
       </Button>
       <Button
-        class="bg-purple-500 hover:bg-purple-600"
         size="icon-sm"
         disabled={currentTime <= 0}
         onmouseup={seekBackward}
@@ -167,7 +157,6 @@
         <IconPlayerSkipBack />
       </Button>
       <Button
-        class="bg-purple-500 hover:bg-purple-600"
         size="icon-sm"
         disabled={currentTime >= totalDuration}
         onmouseup={seekForward}
@@ -188,11 +177,7 @@
       <Button size="icon-sm" onclick={handleFullscreenClick}>
         <IconMaximize />
       </Button>
-      <Button
-        class="bg-orange-500 hover:bg-orange-600"
-        size="icon-sm"
-        onclick={() => (showModal = true)}
-      >
+      <Button size="icon-sm" onclick={() => (showModal = true)}>
         <IconSettings />
       </Button>
     </div>
