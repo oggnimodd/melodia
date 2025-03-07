@@ -155,7 +155,7 @@ export function desaturateColor(hex: string, fraction: number): string {
 
 // Precompute the desaturated color for black keys on startup.
 TRACK_COLORS.forEach((track) => {
-  track.activeBlack = desaturateColor(track.active, 0.6);
+  track.activeBlack = desaturateColor(track.active, 0.45);
 });
 
 // Adjusted getTrackColor using the precomputed activeBlack value.
