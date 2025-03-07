@@ -9,6 +9,12 @@ import {
 } from "$lib/utils/piano";
 import type { Notes } from "$lib/models/midi";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import {
+  DEFAULT_VISUAL_OFFSET,
+  DEFAULT_SHOW_LABELS,
+  DEFAULT_VISIBLE_SECONDS,
+  DEFAULT_SHOW_OCTAVE_LINES,
+} from "./config";
 
 export interface PianoRollOptions {
   minMidi?: number;
@@ -19,11 +25,6 @@ export interface PianoRollInitOptions {
   fullscreen: boolean;
   controlsDiv: HTMLDivElement | null;
 }
-
-const DEFAULT_VISUAL_OFFSET = -0.1;
-const DEFAULT_SHOW_LABELS = true;
-const DEFAULT_VISIBLE_SECONDS = 3;
-const DEFAULT_SHOW_OCTAVE_LINES = false;
 
 export class PianoRoll {
   // Configuration options available immediately.
