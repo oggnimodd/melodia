@@ -36,8 +36,8 @@ export class PianoRoll {
   maxMidi = $state(108);
 
   // Customizable octave line properties.
-  octaveLineColor = $state("rgba(255, 255, 255, 0.3)");
-  octaveLineWidth = $state(0.3);
+  octaveLineColor = $state("rgba(255, 255, 255, 0.45)");
+  octaveLineWidth = $state(0.5);
 
   // DOM-dependent properties (set later in onMount).
   canvas: HTMLCanvasElement | null = $state(null);
