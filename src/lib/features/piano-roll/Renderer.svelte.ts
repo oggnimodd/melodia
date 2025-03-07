@@ -280,7 +280,7 @@ export class PianoRoll {
       c.lineTo(x, topY + noteRadius);
       c.arcTo(x, topY, x + noteRadius, topY, noteRadius);
       c.fill();
-      if (this.showLabels && noteHeight > 15) {
+      if (this.showLabels && noteHeight > 15 && !isBlackKey(note.midi)) {
         c.fillStyle = "#fff";
         c.font = "bold 13.5px sans-serif";
         c.textAlign = "center";
