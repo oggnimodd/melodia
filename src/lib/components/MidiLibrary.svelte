@@ -21,6 +21,7 @@
   import { toast } from "svelte-sonner";
   import { selectedMidi } from "$lib/features/midi";
   import { goto } from "$app/navigation";
+  import isMobile from "is-mobile";
 
   interface StoredMidi {
     hash: string;
@@ -186,7 +187,7 @@
           size={16}
         />
         <Input
-          autofocus
+          autofocus={!isMobile()}
           type="text"
           placeholder="Search by file name..."
           bind:value={searchTerm}
