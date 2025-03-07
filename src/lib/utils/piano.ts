@@ -21,10 +21,6 @@ export const CONFIG = {
   blackKeyWidthRatio: 0.6,
   whiteKeyColor: "#ffffff",
   blackKeyColor: "#000000",
-  activeWhiteKeyColor: "#2196F3",
-  activeBlackKeyColor: "#2196F3", // will be darkened for black keys
-  inactiveNoteColor: "#2196F3",
-  activeNoteColor: "#2196F3",
   fontColor: "#000000",
 };
 
