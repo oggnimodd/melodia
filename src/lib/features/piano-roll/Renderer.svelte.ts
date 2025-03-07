@@ -108,25 +108,25 @@ export class PianoRoll {
     this.ctx = ctx;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
     if (this.allNotes.length > 0) {
+      // Standard piano range (88 keys)
+      const standardMinMidi = 21; // A0
+      const standardMaxMidi = 108; // C8
+
+      // Get the actual min and max MIDI numbers from the loaded notes.
       const actualMinMidi = Math.min(...this.allNotes.map((n) => n.midi));
       const actualMaxMidi = Math.max(...this.allNotes.map((n) => n.midi));
-      const center = (actualMinMidi + actualMaxMidi) / 2;
-      const actualOctaves = Math.ceil((actualMaxMidi - actualMinMidi + 1) / 12);
-      const renderedOctaves = Math.max(actualOctaves, 6);
-      const renderedSemitones = renderedOctaves * 12;
-      let newMinMidi = Math.floor((center - renderedSemitones / 2) / 12) * 12;
-      let newMaxMidi = newMinMidi + renderedSemitones - 1;
-      if (newMinMidi > actualMinMidi) {
-        newMinMidi = Math.floor(actualMinMidi / 12) * 12;
-        newMaxMidi = newMinMidi + renderedSemitones - 1;
-      }
-      if (newMaxMidi < actualMaxMidi) {
-        newMaxMidi = Math.ceil((actualMaxMidi + 1) / 12) * 12 - 1;
-        newMinMidi = newMaxMidi - renderedSemitones + 1;
-      }
+
+      // Choose the lower bound as the lower of standard and actual (in case your piece has lower notes)
+      // and the upper bound as the higher of standard and actual.
+      let newMinMidi = Math.min(standardMinMidi, actualMinMidi);
+      let newMaxMidi = Math.max(standardMaxMidi, actualMaxMidi);
+
       const extraWhiteKeys = 3;
       const extraSemitones = Math.ceil((extraWhiteKeys * 12) / 7);
-      newMaxMidi += extraSemitones;
+      newMinMidi = Math.max(0, newMinMidi - extraSemitones);
+      newMaxMidi = Math.min(127, newMaxMidi + extraSemitones);
+
+      // Calculate the layout offsets and scale based on the computed range.
       this.leftOffset = getLayoutOffsetRaw(newMinMidi);
       const maxOffset = getLayoutOffsetRaw(newMaxMidi);
       this.scale = finalWidth / (maxOffset - this.leftOffset);
