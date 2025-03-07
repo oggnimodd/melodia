@@ -282,7 +282,7 @@ export class PianoRoll {
       c.fill();
       if (this.showLabels && noteHeight > 15) {
         c.fillStyle = "#fff";
-        c.font = "bold 12px sans-serif";
+        c.font = "bold 13.5px sans-serif";
         c.textAlign = "center";
         c.textBaseline = "middle";
         c.fillText(
