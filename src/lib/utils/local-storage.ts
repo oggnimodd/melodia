@@ -1,67 +1,61 @@
 import { browser } from "$app/environment";
-import { apiKeysSchema } from "$lib/models/api-key";
-import type { z } from "zod";
+import { z } from "zod";
+import {
+  DEFAULT_VISUAL_OFFSET,
+  DEFAULT_SHOW_LABELS,
+  DEFAULT_VISIBLE_SECONDS,
+  DEFAULT_SHOW_OCTAVE_LINES,
+} from "$lib/features/piano-roll";
 
+// Define each key separately.
 const schemas = {
-  apiKeys: apiKeysSchema,
+  showLabels: z.boolean(),
+  showOctaveLines: z.boolean(),
+  audioVisualOffset: z.number(),
+  visibleSeconds: z.number(),
 } as const;
 
-// Default values that match the schema exactly.
-const defaults = {
-  apiKeys: {
-    GEMINI_API_KEY: "",
-    MISTRAL_API_KEY: "",
-    GROQ_API_KEY: "",
-  },
-} as const;
-
-export type LocalStorageKey = keyof typeof schemas; // Only 'apiKeys' in this example
+export type LocalStorageKey = keyof typeof schemas;
 export type LocalStorageSchema = {
   [K in LocalStorageKey]: z.infer<(typeof schemas)[K]>;
+};
+
+// Explicitly type defaults as LocalStorageSchema.
+const defaults: LocalStorageSchema = {
+  showLabels: DEFAULT_SHOW_LABELS,
+  showOctaveLines: DEFAULT_SHOW_OCTAVE_LINES,
+  audioVisualOffset: DEFAULT_VISUAL_OFFSET,
+  visibleSeconds: DEFAULT_VISIBLE_SECONDS,
 };
 
 /**
  * Provides type-safe access to localStorage using Zod for runtime validation.
  */
-
-// biome-ignore lint/complexity/noStaticOnlyClass: <explanation>
 class LocalStorageManager {
-  /**
-   * Reads a value from localStorage.
-   * If the key doesn't exist or the value is invalid, returns the default.
-   */
   static get<K extends LocalStorageKey>(
     key: K,
     options?: { defaultValue?: LocalStorageSchema[K] }
   ): LocalStorageSchema[K] {
     if (!browser) {
-      console.warn(
-        "LocalStorageManager.get called on the server. Returning default value."
-      );
       return options?.defaultValue ?? defaults[key];
     }
 
     try {
       const storedItem = localStorage.getItem(key);
       if (!storedItem) {
-        // No stored value, so use default.
         return options?.defaultValue ?? defaults[key];
       }
       const parsedItem = JSON.parse(storedItem);
       const result = schemas[key].safeParse(parsedItem);
-
       if (!result.success) {
         console.warn(
           `Invalid value in localStorage for key "${key}". Resetting to default.`,
           result.error
         );
-        // Save default if the stored value is invalid.
-        // biome-ignore lint/complexity/noThisInStatic: <explanation>
         this.set(key, options?.defaultValue ?? defaults[key]);
         return options?.defaultValue ?? defaults[key];
       }
-
-      return result.data;
+      return result.data as LocalStorageSchema[K];
     } catch (error) {
       console.warn(
         `Error reading from localStorage for key "${key}". Returning default value.`,
@@ -71,17 +65,11 @@ class LocalStorageManager {
     }
   }
 
-  /**
-   * Validates and writes a value to localStorage.
-   */
   static set<K extends LocalStorageKey>(
     key: K,
     value: LocalStorageSchema[K]
   ): boolean {
     if (!browser) {
-      console.warn(
-        "LocalStorageManager.set called on the server. No action taken."
-      );
       return false;
     }
 
@@ -94,8 +82,6 @@ class LocalStorageManager {
         );
         return false;
       }
-
-      // Store the validated value directly.
       localStorage.setItem(key, JSON.stringify(value));
       return true;
     } catch (error) {
@@ -104,14 +90,8 @@ class LocalStorageManager {
     }
   }
 
-  /**
-   * Removes a key from localStorage.
-   */
   static remove(key: LocalStorageKey): boolean {
     if (!browser) {
-      console.warn(
-        "LocalStorageManager.remove called on the server. No action taken."
-      );
       return false;
     }
 
@@ -124,14 +104,8 @@ class LocalStorageManager {
     }
   }
 
-  /**
-   * Clears all keys from localStorage.
-   */
   static clear(): boolean {
     if (!browser) {
-      console.warn(
-        "LocalStorageManager.clear called on the server. No action taken."
-      );
       return false;
     }
 

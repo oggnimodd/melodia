@@ -6,6 +6,11 @@
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import {
+    DEFAULT_SHOW_LABELS,
+    DEFAULT_VISIBLE_SECONDS,
+    DEFAULT_SHOW_OCTAVE_LINES,
+  } from "$lib/features/piano-roll";
 
   // Define the prop types
   interface SettingsModalProps {
@@ -59,6 +64,12 @@
   }: SettingsModalProps = $props();
 
   const visibleSecondsOptions = [2, 3, 4, 5, 6];
+
+  function resetPianoConfig() {
+    setShowLabels?.(DEFAULT_SHOW_LABELS);
+    setVisibleSeconds?.(DEFAULT_VISIBLE_SECONDS);
+    setShowOctaveLines?.(DEFAULT_SHOW_OCTAVE_LINES);
+  }
 </script>
 
 <Dialog.Root
@@ -150,9 +161,7 @@
 
             <!-- Visible Seconds -->
             <div class="mt-4">
-              <!-- Label for toggle group -->
               <Label>Visible Seconds</Label>
-
               <ToggleGroup.Root
                 type="single"
                 class="justify-start"
@@ -163,7 +172,6 @@
                     setVisibleSeconds?.(Number(value));
                 }}
               >
-                <!-- Loop for toggle group items -->
                 {#each visibleSecondsOptions as option}
                   <ToggleGroup.Item
                     disabled={Number(option) === visibleSeconds}
@@ -174,6 +182,17 @@
                   </ToggleGroup.Item>
                 {/each}
               </ToggleGroup.Root>
+            </div>
+
+            <!-- Reset Piano Config Button -->
+            <div class="mt-4">
+              <Button
+                variant="destructive"
+                size="sm"
+                onclick={() => resetPianoConfig()}
+              >
+                Reset Piano Config
+              </Button>
             </div>
           </Tabs.Content>
         </Tabs.Root>

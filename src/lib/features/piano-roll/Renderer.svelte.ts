@@ -13,8 +13,8 @@ import {
   DEFAULT_VISUAL_OFFSET,
   DEFAULT_SHOW_LABELS,
   DEFAULT_VISIBLE_SECONDS,
-  DEFAULT_SHOW_OCTAVE_LINES,
 } from "./config";
+import LocalStorageManager from "$lib/utils/local-storage";
 
 export interface PianoRollOptions {
   minMidi?: number;
@@ -27,15 +27,15 @@ export interface PianoRollInitOptions {
 }
 
 export class PianoRoll {
-  // Configuration options available immediately.
-  showLabels = $state(DEFAULT_SHOW_LABELS);
-  showOctaveLines = $state(DEFAULT_SHOW_OCTAVE_LINES);
-  audioVisualOffset = $state(DEFAULT_VISUAL_OFFSET);
-  visibleSeconds = $state(DEFAULT_VISIBLE_SECONDS);
+  // Load config directly from localStorage.
+  showLabels = $state(LocalStorageManager.get("showLabels"));
+  showOctaveLines = $state(LocalStorageManager.get("showOctaveLines"));
+  audioVisualOffset = $state(LocalStorageManager.get("audioVisualOffset"));
+  visibleSeconds = $state(LocalStorageManager.get("visibleSeconds"));
   minMidi = $state(24);
   maxMidi = $state(108);
 
-  // Customizable octave line properties
+  // Customizable octave line properties.
   octaveLineColor = $state("rgba(255, 255, 255, 0.5)");
   octaveLineWidth = $state(0.5);
 
@@ -63,6 +63,14 @@ export class PianoRoll {
     this.maxMidi = options.maxMidi ?? this.maxMidi;
   }
 
+  // Update each config property in localStorage.
+  private updateConfigStorage() {
+    LocalStorageManager.set("showLabels", this.showLabels);
+    LocalStorageManager.set("showOctaveLines", this.showOctaveLines);
+    LocalStorageManager.set("audioVisualOffset", this.audioVisualOffset);
+    LocalStorageManager.set("visibleSeconds", this.visibleSeconds);
+  }
+
   /**
    * Set the canvas and container elements once they are available.
    */
@@ -86,7 +94,6 @@ export class PianoRoll {
       ? containerHeight - (controlsDiv?.offsetHeight || 0)
       : window.innerHeight * 0.7;
     if (finalHeight < 0) finalHeight = containerHeight;
-    // Set canvas dimensions based on device pixel ratio.
     const dpr = window.devicePixelRatio || 1;
     this.canvasCssWidth = finalWidth;
     this.canvasCssHeight = finalHeight;
@@ -100,7 +107,6 @@ export class PianoRoll {
     ctx.imageSmoothingEnabled = false;
     this.ctx = ctx;
     ctx.clearRect(0, 0, finalWidth, finalHeight);
-    // Recalculate note layout if we have note data.
     if (this.allNotes.length > 0) {
       const actualMinMidi = Math.min(...this.allNotes.map((n) => n.midi));
       const actualMaxMidi = Math.max(...this.allNotes.map((n) => n.midi));
@@ -140,30 +146,37 @@ export class PianoRoll {
 
   setAudioVisualOffset(val: number) {
     this.audioVisualOffset = val;
+    this.updateConfigStorage();
   }
 
   setShowLabels(val: boolean) {
     this.showLabels = val;
+    this.updateConfigStorage();
   }
 
   setShowOctaveLines(val: boolean) {
     this.showOctaveLines = val;
+    this.updateConfigStorage();
   }
 
   setVisibleSeconds(val: number) {
     this.visibleSeconds = val;
+    this.updateConfigStorage();
   }
 
   resetAudioVisualOffset() {
     this.audioVisualOffset = DEFAULT_VISUAL_OFFSET;
+    this.updateConfigStorage();
   }
 
   resetShowLabels() {
     this.showLabels = DEFAULT_SHOW_LABELS;
+    this.updateConfigStorage();
   }
 
   resetVisibleSeconds() {
     this.visibleSeconds = DEFAULT_VISIBLE_SECONDS;
+    this.updateConfigStorage();
   }
 
   drawPianoKeys() {
