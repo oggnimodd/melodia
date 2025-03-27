@@ -2,7 +2,7 @@
 
 Melodia is a web-based MIDI visualizer inspired by Synthesia. Upload your MIDI files and watch the notes fall on a virtual piano keyboard, helping you learn and practice piano pieces visually.
 
-<video src="screenshots/demo.mp4" width="100%" controls></video>
+![Demo Screenshot](screenshots/demo.png)
 
 ## Features
 
