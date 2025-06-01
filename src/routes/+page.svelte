@@ -9,6 +9,7 @@
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import PlaybackControls from "$lib/components/PlaybackControls.svelte";
+  import TrackListControls from "$lib/components/TrackListControls.svelte";
   import { useResizeObserver } from "$lib/hooks/useResizeObserver.svelte";
   import FpsCounter from "$lib/components/FpsCounter.svelte";
   import { PianoRoll } from "$lib/features/piano-roll";
@@ -19,14 +20,14 @@
   import { selectedMidi } from "$lib/features/midi";
   import Button from "$lib/components/ui/button/button.svelte";
 
-  // TODO: extract the file handler
   let autoSaveEnabled = $state(true);
-
   let containerDiv = $state<HTMLDivElement | null>(null);
   let controlsDiv = $state<HTMLDivElement | null>(null);
   let canvas = $state<HTMLCanvasElement | null>(null);
 
-  // Playback & MIDI states
+  let trackNames = $state<string[]>([]);
+  let activeTrackIndices = $state(new Set<number>());
+
   let midiData = $state<MidiData | null>(null);
   let allNotes: Notes = $state([]);
   let isPlaying = $state(false);
@@ -36,7 +37,10 @@
   let fps = $state(0);
   let lastFrameTimestamp = $state<number | null>(null);
 
-  // BPM / speed state
+  let filteredNotes: Notes = $derived(
+    allNotes.filter((note) => activeTrackIndices.has(note.track))
+  );
+
   let originalBPM = $state(120);
   let speedPercent = $state(100);
   let userBPM = $state(120);
@@ -66,17 +70,14 @@
     applySpeed(speedPercent - step);
   }
   function resetSpeed() {
-    speedPercent = 100;
     applySpeed(100);
   }
 
-  // Misc state
   let showModal = $state(false);
   let currentTimeFormatted = $derived(formatSecondsToTime(currentTime));
   let totalDuration = $derived(midiData?.totalDuration || 0);
   let totalDurationFormatted = $derived(formatSecondsToTime(totalDuration));
 
-  // Pointer interactions state
   let startY = $state<number | null>(null);
   let startX = $state<number | null>(null);
   let lastY = $state<number | null>(null);
@@ -85,14 +86,9 @@
   let wasPlayingBeforeInteraction = $state(false);
   let activePointerId: number | null = $state(null);
   let swipeFactor = $state(1);
-
-  // Audio variables
   let audioStartTime = 0;
-
-  // Fullscreen hook
   let { fullscreen, toggle: toggleFullscreen } = useFullScreen();
 
-  // PianoRoll instance (initialized in onMount)
   let pianoRoll = $state(
     new PianoRoll({
       minMidi: 24,
@@ -101,11 +97,19 @@
   );
 
   function drawPianoRoll() {
-    if (pianoRoll) pianoRoll.drawAll(currentTime);
+    if (pianoRoll) {
+      pianoRoll.allNotes = filteredNotes;
+      pianoRoll.drawAll(currentTime);
+    }
   }
 
   function animate() {
-    if (!isPlaying || !pianoRoll) return;
+    if (!isPlaying || !pianoRoll) {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      animationFrameId = null;
+      return;
+    }
+
     const nowPerf = performance.now();
     if (lastFrameTimestamp !== null) {
       const delta = nowPerf - lastFrameTimestamp;
@@ -116,12 +120,25 @@
     const elapsedReal = nowAudio - audioStartTime;
     const newMusicalTime = realToMusicalTime(elapsedReal);
     currentTime += (newMusicalTime - currentTime) * 0.11;
+
     if (currentTime >= totalDuration) {
       pauseAtEnd();
       return;
     }
-    pianoRoll.updateActiveNotes(currentTime, allNotes);
-    drawPianoRoll();
+
+    if (filteredNotes.length > 0) {
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
+      drawPianoRoll();
+    } else if (pianoRoll.ctx) {
+      pianoRoll.ctx.clearRect(
+        0,
+        0,
+        pianoRoll.canvasCssWidth,
+        pianoRoll.canvasCssHeight
+      );
+      pianoRoll.drawPianoKeys();
+    }
+
     animationFrameId = requestAnimationFrame(animate);
   }
 
@@ -130,10 +147,16 @@
     pianoRoll.clearCache();
     midiData = data;
     let noteIdCounter = 0;
-    const newNotes: Notes = [];
+    const newNotesRaw: Notes = [];
+
+    const newTrackNamesArray: string[] = [];
+    const newActiveTrackIndicesSet = new Set<number>();
+
     data.tracks.forEach((track, trackIndex) => {
+      newTrackNamesArray.push(track.name || `Track ${trackIndex + 1}`);
+      newActiveTrackIndicesSet.add(trackIndex);
       track.notes.forEach((note) => {
-        newNotes.push({
+        newNotesRaw.push({
           id: noteIdCounter++,
           time: note.time,
           duration: note.duration,
@@ -144,16 +167,22 @@
         });
       });
     });
-    newNotes.sort((a, b) => a.time - b.time);
-    allNotes = newNotes;
+    newNotesRaw.sort((a, b) => a.time - b.time);
+    allNotes = newNotesRaw;
+    trackNames = newTrackNamesArray;
+    activeTrackIndices = newActiveTrackIndicesSet;
+
     if (allNotes.length > 0) {
       pianoRoll.allNotes = allNotes;
-      // Reinitialize canvas with updated note ranges.
       pianoRoll.initCanvas({
         fullscreen: fullscreen.isActive,
         controlsDiv,
       });
+    } else {
+      pianoRoll.allNotes = [];
+      pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
     }
+
     originalBPM =
       data.header?.tempos && data.header.tempos.length > 0
         ? data.header.tempos[0].bpm
@@ -161,6 +190,7 @@
     speedPercent = 100;
     userBPM = originalBPM;
     Tone.getTransport().bpm.value = userBPM;
+    currentTime = 0;
     drawPianoRoll();
   }
 
@@ -179,11 +209,12 @@
       pianoRoll.clearCache();
       midiData = null;
       allNotes = [];
+      trackNames = [];
+      activeTrackIndices = new Set();
       selectedMidi.file = input.files[0];
 
       try {
         const data = await parseMidiFile(selectedMidi.file);
-
         if (autoSaveEnabled) {
           try {
             await autoSaveMidi(selectedMidi.file, data);
@@ -191,10 +222,15 @@
             toast.error("Failed to auto-save MIDI file.");
           }
         }
-
         processMidiData(data);
       } catch (error) {
+        midiData = null;
+        allNotes = [];
+        trackNames = [];
+        activeTrackIndices = new Set();
+        if (pianoRoll) pianoRoll.allNotes = [];
         toast.error("Failed to parse MIDI file.");
+        drawPianoRoll();
       }
     }
   }
@@ -204,10 +240,9 @@
   }
 
   async function playMidi() {
-    if (!allNotes.length) return;
     isPlaying = true;
     isPaused = false;
-    currentTime = 0;
+
     await Tone.start();
     if (!sampler.instrument) {
       sampler.instrument = createSalamanderPiano();
@@ -216,7 +251,8 @@
     const transport = Tone.getTransport();
     transport.cancel(0);
     transport.stop();
-    for (const n of allNotes) {
+
+    for (const n of filteredNotes) {
       const realTime = musicalToRealTime(n.time);
       transport.schedule((time) => {
         const noteDuration = musicalToRealTime(n.duration);
@@ -228,13 +264,20 @@
         );
       }, realTime);
     }
-    transport.start();
+
+    if (currentTime >= totalDuration && totalDuration > 0) {
+      currentTime = 0;
+    }
+
+    transport.start(undefined, musicalToRealTime(currentTime));
     audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
-    requestAnimationFrame(animate);
+    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+    animationFrameId = requestAnimationFrame(animate);
   }
 
   function togglePauseResume() {
     if (!isPlaying) return;
+
     if (!isPaused) {
       Tone.getTransport().pause();
       isPaused = true;
@@ -246,15 +289,60 @@
       audioStartTime = Tone.getContext().now() - musicalToRealTime(currentTime);
       Tone.getTransport().start(undefined, musicalToRealTime(currentTime));
       isPaused = false;
-      requestAnimationFrame(animate);
+      if (!animationFrameId) animationFrameId = requestAnimationFrame(animate);
     }
   }
 
   function handlePlayButtonClick() {
-    if (!isPlaying || currentTime >= totalDuration) {
+    if (!isPlaying || (currentTime >= totalDuration && totalDuration > 0)) {
       playMidi();
     } else {
       togglePauseResume();
+    }
+  }
+
+  function toggleTrack(trackIndex: number) {
+    const newActiveTrackIndices = new Set(activeTrackIndices);
+    if (newActiveTrackIndices.has(trackIndex)) {
+      newActiveTrackIndices.delete(trackIndex);
+    } else {
+      newActiveTrackIndices.add(trackIndex);
+    }
+    activeTrackIndices = newActiveTrackIndices;
+
+    drawPianoRoll();
+
+    if (isPlaying) {
+      const wasPaused = isPaused;
+      if (!wasPaused) {
+        Tone.getTransport().pause();
+      }
+
+      Tone.getTransport().cancel(0);
+
+      for (const n of filteredNotes) {
+        const realTime = musicalToRealTime(n.time);
+        Tone.getTransport().schedule((time) => {
+          const noteDuration = musicalToRealTime(n.duration);
+          sampler.instrument!.triggerAttackRelease(
+            n.name,
+            noteDuration,
+            time,
+            n.velocity ?? 1
+          );
+        }, realTime);
+      }
+
+      (Tone.getTransport() as any).seconds = musicalToRealTime(currentTime);
+
+      if (!wasPaused) {
+        Tone.getTransport().start(undefined, musicalToRealTime(currentTime));
+        audioStartTime =
+          Tone.getContext().now() - musicalToRealTime(currentTime);
+        if (!animationFrameId && isPlaying) {
+          animationFrameId = requestAnimationFrame(animate);
+        }
+      }
     }
   }
 
@@ -273,6 +361,8 @@
       requestAnimationFrame(animate);
     } else {
       (Tone.getTransport() as any).seconds = musicalToRealTime(newTime);
+      if (filteredNotes.length > 0)
+        pianoRoll.updateActiveNotes(currentTime, filteredNotes);
       drawPianoRoll();
     }
   }
@@ -292,6 +382,8 @@
       requestAnimationFrame(animate);
     } else {
       (Tone.getTransport() as any).seconds = musicalToRealTime(newTime);
+      if (filteredNotes.length > 0)
+        pianoRoll.updateActiveNotes(currentTime, filteredNotes);
       drawPianoRoll();
     }
   }
@@ -313,11 +405,11 @@
   function handleSliderInput(e: Event) {
     const val = parseFloat((e.target as HTMLInputElement).value);
     currentTime = val;
-    pianoRoll.updateActiveNotes(currentTime, allNotes);
+    if (filteredNotes.length > 0)
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
     drawPianoRoll();
     if (val >= totalDuration) {
       Tone.getTransport().pause();
-      isPlaying = false;
       isPaused = true;
     } else {
       (Tone.getTransport() as any).seconds = musicalToRealTime(val);
@@ -332,12 +424,12 @@
       requestAnimationFrame(animate);
       wasPlayingBeforeSlide = false;
     }
-    pianoRoll.updateActiveNotes(currentTime, allNotes);
+    if (filteredNotes.length > 0)
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
     drawPianoRoll();
     isSliding = false;
   }
 
-  // Pointer handlers for canvas swiping
   function handleCanvasPointerDown(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (activePointerId !== null && e.pointerId !== activePointerId) return;
@@ -359,7 +451,7 @@
   }
   function handleCanvasPointerMove(e: PointerEvent) {
     if (e.pointerId !== activePointerId) return;
-    if (startY === null) return;
+    if (startY === null || startX === null) return;
     const deltaY = e.clientY - startY;
     if (!isSwiping && Math.abs(deltaY) > swipeThreshold) {
       isSwiping = true;
@@ -372,7 +464,8 @@
         0,
         Math.min(totalDuration, currentTime + timeAdjustment)
       );
-      pianoRoll.updateActiveNotes(currentTime, allNotes);
+      if (filteredNotes.length > 0)
+        pianoRoll.updateActiveNotes(currentTime, filteredNotes);
       (Tone.getTransport() as any).seconds = musicalToRealTime(currentTime);
       drawPianoRoll();
       lastY = e.clientY;
@@ -381,17 +474,12 @@
   function handleCanvasPointerUp(e: PointerEvent) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     if (e.pointerId !== activePointerId) return;
-    if (startY === null) return;
+    if (startY === null || startX === null) return;
+
     const deltaY = Math.abs(e.clientY - startY);
-    if (deltaY < swipeThreshold) {
-      if (!isPlaying) {
-        playMidi();
-      } else if (isPaused && !wasPlayingBeforeInteraction) {
-        togglePauseResume();
-      } else if (!wasPlayingBeforeInteraction) {
-        togglePauseResume();
-      }
-    } else {
+    const deltaX = Math.abs(e.clientX - startX);
+
+    if (isSwiping) {
       if (wasPlayingBeforeInteraction) {
         Tone.getTransport().start(undefined, musicalToRealTime(currentTime));
         audioStartTime =
@@ -399,14 +487,29 @@
         isPaused = false;
         requestAnimationFrame(animate);
       }
+    } else {
+      if (deltaY < swipeThreshold && deltaX < swipeThreshold) {
+        if (!isPlaying) {
+          playMidi();
+        } else if (isPaused && !wasPlayingBeforeInteraction) {
+          togglePauseResume();
+        } else if (!wasPlayingBeforeInteraction) {
+          togglePauseResume();
+        }
+      }
     }
-    pianoRoll.updateActiveNotes(currentTime, allNotes);
+
+    if (filteredNotes.length > 0)
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
     drawPianoRoll();
+
     startX = null;
     startY = null;
     lastY = null;
     isSwiping = false;
     activePointerId = null;
+    if (canvas) canvas.releasePointerCapture(e.pointerId);
+    wasPlayingBeforeInteraction = false;
   }
 
   function pauseAtEnd() {
@@ -414,6 +517,8 @@
     isPlaying = false;
     isPaused = true;
     currentTime = totalDuration;
+    if (filteredNotes.length > 0)
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
     drawPianoRoll();
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
@@ -425,19 +530,28 @@
     isPlaying = false;
     isPaused = true;
     currentTime = 0;
+
     if (animationFrameId) {
       cancelAnimationFrame(animationFrameId);
       animationFrameId = null;
     }
+    if (filteredNotes.length > 0)
+      pianoRoll.updateActiveNotes(currentTime, filteredNotes);
     drawPianoRoll();
   }
 
   function updateSwipeFactor() {
-    if (pianoRoll) {
+    if (pianoRoll && pianoRoll.canvasCssHeight > 0) {
       const pianoTopY =
         pianoRoll.canvasCssHeight -
         pianoRoll.canvasCssHeight * CONFIG.pianoHeightRatio;
-      swipeFactor = pianoRoll.visibleSeconds / pianoTopY;
+      if (pianoTopY > 0 && pianoRoll.visibleSeconds > 0) {
+        swipeFactor = pianoRoll.visibleSeconds / pianoTopY;
+      } else {
+        swipeFactor = 0.01;
+      }
+    } else {
+      swipeFactor = 0.01;
     }
   }
 
@@ -445,8 +559,16 @@
     element: () => containerDiv,
     onResize: () => {
       if (pianoRoll) {
+        const notesForResize =
+          pianoRoll.allNotes && pianoRoll.allNotes.length > 0
+            ? pianoRoll.allNotes
+            : allNotes;
+        const tempAllNotes = pianoRoll.allNotes;
+        pianoRoll.allNotes = notesForResize;
         pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
+        pianoRoll.allNotes = tempAllNotes;
         drawPianoRoll();
+        updateSwipeFactor();
       }
     },
   });
@@ -456,6 +578,8 @@
       if (containerDiv && canvas) {
         pianoRoll.setElements({ canvas, containerDiv });
         pianoRoll.initCanvas({ fullscreen: fullscreen.isActive, controlsDiv });
+        drawPianoRoll();
+        updateSwipeFactor();
       }
     }
   });
@@ -484,11 +608,11 @@
         accept=".midi,.mid"
         onchange={handleFileChange}
       />
-      <!-- Using our Button component as a link to the library page -->
       <Button variant="outline" href="/midi-library">Choose from Library</Button
       >
     </div>
   {/if}
+
   {#if allNotes.length > 0}
     <PlaybackControls
       bind:controlsDiv
@@ -516,7 +640,14 @@
       {handleSliderInput}
       {handleSliderPointerUp}
     />
+    <TrackListControls
+      tracks={trackNames}
+      {activeTrackIndices}
+      {toggleTrack}
+      fullscreen={fullscreen.isActive}
+    />
   {/if}
+
   <div
     class={fullscreen.isActive
       ? "flex-1 overflow-hidden bg-black"
@@ -529,6 +660,7 @@
       onpointerdown={handleCanvasPointerDown}
       onpointermove={handleCanvasPointerMove}
       onpointerup={handleCanvasPointerUp}
+      onpointercancel={handleCanvasPointerUp}
     ></canvas>
   </div>
 </div>
@@ -555,6 +687,7 @@
   setVisibleSeconds={(val) => {
     pianoRoll.setVisibleSeconds(val);
     drawPianoRoll();
+    updateSwipeFactor();
   }}
   setShowOctaveLines={(val) => {
     pianoRoll.setShowOctaveLines(val);
