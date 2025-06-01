@@ -14,8 +14,6 @@
   import isMobile from "is-mobile";
   import { lockOrientationToLandscape } from "$lib/utils/screen";
 
-  // Define the props interface with a new line between each property
-
   interface PlaybackControlProps {
     /** Reference to the controls container div */
     controlsDiv: HTMLDivElement | null;

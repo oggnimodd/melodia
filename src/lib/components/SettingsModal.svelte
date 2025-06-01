@@ -6,6 +6,8 @@
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import { getTrackColor } from "$lib/utils/piano";
+  import { cn } from "$lib/utils";
   import {
     DEFAULT_SHOW_LABELS,
     DEFAULT_VISIBLE_SECONDS,
@@ -28,6 +30,15 @@
 
     /** Whether to show octave lines on piano keys */
     showOctaveLines: boolean;
+
+    /** Array of track names */
+    tracks?: string[];
+
+    /** Set of active track indices */
+    activeTrackIndices?: Set<number>;
+
+    /** Callback to toggle track on/off */
+    toggleTrack?: (trackIndex: number) => void;
 
     /** Callback: invoked when user clicks 'Close' or closes the modal */
     onClose?: () => void;
@@ -55,6 +66,9 @@
     showLabels,
     visibleSeconds,
     showOctaveLines,
+    tracks = [],
+    activeTrackIndices = new Set(),
+    toggleTrack,
     onClose,
     onResetOffset,
     setShowLabels,
@@ -69,6 +83,19 @@
     setShowLabels?.(DEFAULT_SHOW_LABELS);
     setVisibleSeconds?.(DEFAULT_VISIBLE_SECONDS);
     setShowOctaveLines?.(DEFAULT_SHOW_OCTAVE_LINES);
+  }
+
+  function getTrackStyle(trackIndex: number) {
+    const color = getTrackColor(trackIndex, true, false);
+    return `color: ${color};`;
+  }
+
+  function getCheckboxStyle(trackIndex: number) {
+    if (activeTrackIndices.has(trackIndex)) {
+      const color = getTrackColor(trackIndex, true, false);
+      return `background-color: ${color} !important; border-color: ${color} !important;`;
+    }
+    return "border-color: #6b7280;";
   }
 </script>
 
@@ -100,7 +127,16 @@
             <Tabs.Trigger value="piano" class="px-4 py-2 hover:bg-secondary/10">
               Piano Config
             </Tabs.Trigger>
+            {#if tracks.length > 0}
+              <Tabs.Trigger
+                value="tracks"
+                class="px-4 py-2 hover:bg-secondary/10"
+              >
+                Tracks
+              </Tabs.Trigger>
+            {/if}
           </Tabs.List>
+
           <Tabs.Content value="calibration" class="pt-4">
             <p class="mb-4 text-sm text-foreground/80">
               Adjust the slider so visuals match the piano sound.
@@ -134,6 +170,7 @@
               </Button>
             </div>
           </Tabs.Content>
+
           <Tabs.Content value="piano" class="pt-4">
             <div class="mb-4 flex items-center gap-2">
               <Checkbox
@@ -195,6 +232,42 @@
               </Button>
             </div>
           </Tabs.Content>
+
+          {#if tracks.length > 0}
+            <Tabs.Content value="tracks" class="pt-4">
+              <div class="mb-4">
+                <h3 class="mb-3 text-sm font-semibold text-foreground">
+                  Track Visibility
+                </h3>
+                <div class="grid grid-cols-1 gap-y-2">
+                  {#each tracks as trackName, i}
+                    <div class="flex items-center space-x-3">
+                      <Checkbox
+                        id={`modal-track-${i}`}
+                        aria-label={`Toggle track ${trackName || `Track ${i + 1}`}`}
+                        checked={activeTrackIndices.has(i)}
+                        onCheckedChange={() => {
+                          toggleTrack?.(i);
+                        }}
+                        class={cn(
+                          "h-4 w-4 rounded-sm focus:ring-transparent focus:ring-offset-0 data-[state=checked]:text-white"
+                        )}
+                        style={getCheckboxStyle(i)}
+                      />
+                      <Label
+                        for={`modal-track-${i}`}
+                        class="cursor-pointer text-sm"
+                        style={getTrackStyle(i)}
+                        title={trackName || `Track ${i + 1}`}
+                      >
+                        {trackName || `Track ${i + 1}`}
+                      </Label>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            </Tabs.Content>
+          {/if}
         </Tabs.Root>
       </div>
       <Dialog.Footer class="mt-6 flex justify-end">

@@ -9,7 +9,6 @@
   import type { Notes } from "$lib/models/midi";
   import SettingsModal from "$lib/components/SettingsModal.svelte";
   import PlaybackControls from "$lib/components/PlaybackControls.svelte";
-  import TrackListControls from "$lib/components/TrackListControls.svelte";
   import { useResizeObserver } from "$lib/hooks/useResizeObserver.svelte";
   import FpsCounter from "$lib/components/FpsCounter.svelte";
   import { PianoRoll } from "$lib/features/piano-roll";
@@ -640,12 +639,6 @@
       {handleSliderInput}
       {handleSliderPointerUp}
     />
-    <TrackListControls
-      tracks={trackNames}
-      {activeTrackIndices}
-      {toggleTrack}
-      fullscreen={fullscreen.isActive}
-    />
   {/if}
 
   <div
@@ -671,6 +664,9 @@
   showLabels={pianoRoll.showLabels}
   visibleSeconds={pianoRoll.visibleSeconds}
   showOctaveLines={pianoRoll.showOctaveLines}
+  tracks={trackNames}
+  {activeTrackIndices}
+  {toggleTrack}
   onClose={handleCloseModal}
   onResetOffset={() => {
     pianoRoll.resetAudioVisualOffset();
